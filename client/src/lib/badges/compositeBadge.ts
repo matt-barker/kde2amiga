@@ -13,7 +13,18 @@ export interface BadgeOptions {
 }
 
 function recolorSvg(svgText: string, color: string, outline?: string): string {
-  let recolored = svgText.replace(/fill="[^"]*"/g, `fill="${color}"`).replace(/fill:\s*[^;"]+/g, `fill:${color}`);
+  // Swap any explicit fills to the chosen colour, leaving fill="none" alone —
+  // filling a shape deliberately marked unfilled would be a bug in the other direction.
+  let recolored = svgText
+    .replace(/fill="(?!none")[^"]*"/g, `fill="${color}"`)
+    .replace(/fill:\s*[^;"]+/g, `fill:${color}`);
+
+  // Real MDI icons carry no fill at all and inherit it from an ancestor, so make
+  // sure the root <svg> supplies one. Scoped to the root opening tag only.
+  recolored = recolored.replace(/<svg\b[^>]*>/, (openingTag) =>
+    /\sfill="/.test(openingTag) ? openingTag : openingTag.replace(/<svg\b/, `<svg fill="${color}"`),
+  );
+
   if (outline) {
     recolored = recolored.replace('<svg', `<svg stroke="${outline}" stroke-width="1"`);
   }
