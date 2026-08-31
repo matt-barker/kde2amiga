@@ -14,6 +14,15 @@ describe('rasterizeSvg', () => {
     expect(image.data[centerIndex]).toBeGreaterThan(200);
     expect(image.data[centerIndex + 3]).toBe(255);
   });
+
+  it('rasterizes a viewBox-only SVG that declares no width or height', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#0000ff"/></svg>';
+    const image = await rasterizeSvg(svg, 16);
+    expect(image.width).toBe(16);
+    const centerIndex = (8 * 16 + 8) * 4;
+    expect(image.data[centerIndex + 2]).toBeGreaterThan(200); // blue
+    expect(image.data[centerIndex + 3]).toBe(255);
+  });
 });
 
 describe('decodePng', () => {

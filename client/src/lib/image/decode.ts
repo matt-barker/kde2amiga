@@ -28,8 +28,22 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * A viewBox-only SVG has no reliable intrinsic size: browsers disagree on the
+ * fallback (the 300x150 default versus the viewBox), and librsvg rejects it
+ * outright. Real MDI badges and some KDE theme icons are shaped this way, so
+ * pin the dimensions before rasterizing.
+ */
+function ensureSvgSize(svgText: string, size: number): string {
+  return svgText.replace(/<svg\b[^>]*>/, (openingTag) =>
+    openingTag
+      .replace(/\s(?:width|height)="[^"]*"/g, '')
+      .replace(/<svg\b/, `<svg width="${size}" height="${size}"`),
+  );
+}
+
 export async function rasterizeSvg(svgText: string, outputSizePx: number): Promise<RgbaImage> {
-  const base64 = bytesToBase64(new TextEncoder().encode(svgText));
+  const base64 = bytesToBase64(new TextEncoder().encode(ensureSvgSize(svgText, outputSizePx)));
   const url = `data:image/svg+xml;base64,${base64}`;
   const img = await loadImageElement(url);
   return drawToRgbaImage(img, outputSizePx);

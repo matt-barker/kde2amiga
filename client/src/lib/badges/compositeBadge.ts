@@ -31,19 +31,6 @@ function recolorSvg(svgText: string, color: string, outline?: string): string {
   return recolored;
 }
 
-/**
- * MDI badge SVGs carry only a viewBox, with no intrinsic size. Browsers
- * disagree on what an unsized SVG's dimensions are when loaded via <img>,
- * so pin them explicitly to keep rasterization deterministic.
- */
-function ensureSvgSize(svgText: string, size: number): string {
-  return svgText.replace(/<svg\b[^>]*>/, (openingTag) =>
-    openingTag
-      .replace(/\s(?:width|height)="[^"]*"/g, '')
-      .replace(/<svg\b/, `<svg width="${size}" height="${size}"`),
-  );
-}
-
 function cornerOffset(corner: BadgeCorner, baseSize: number, badgeSize: number): { x: number; y: number } {
   const margin = 0;
   switch (corner) {
@@ -59,7 +46,7 @@ export async function compositeBadge(base: RgbaImage, options: BadgeOptions): Pr
   const { svgText, color, corner, scale, outline, dropShadow } = options;
   const badgeSize = Math.round(base.width * scale);
   const recoloredSvg = recolorSvg(svgText, color, outline);
-  const badge = await rasterizeSvg(ensureSvgSize(recoloredSvg, badgeSize), badgeSize);
+  const badge = await rasterizeSvg(recoloredSvg, badgeSize);
   const { x: offsetX, y: offsetY } = cornerOffset(corner, base.width, badgeSize);
 
   const canvas = document.createElement('canvas');
