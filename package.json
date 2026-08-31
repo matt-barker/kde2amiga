@@ -1,0 +1,9 @@
+{
+  "name": "kde2amiga",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix server run dev & npm --prefix client run dev",
+    "test": "npm --prefix client test"
+  },
+  "devDependencies": {}
+}
