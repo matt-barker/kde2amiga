@@ -1,7 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import JSZip from 'jszip';
 import App from './App';
+import { runConversionJob } from './lib/pipeline/convertJob';
+
+vi.mock('./lib/pipeline/convertJob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/pipeline/convertJob')>();
+  return { ...actual, runConversionJob: vi.fn(actual.runConversionJob) };
+});
 
 async function makeThemeZipFile(): Promise<File> {
   const zip = new JSZip();
@@ -27,5 +33,21 @@ describe('App end-to-end', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: /download/i })).toBeInTheDocument(), {
       timeout: 5000,
     });
+  });
+
+  it('shows an error and no download link when conversion fails', async () => {
+    vi.mocked(runConversionJob).mockRejectedValueOnce(new Error('boom'));
+
+    render(<App />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByLabelText(/folder \(places\)/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
   });
 });
