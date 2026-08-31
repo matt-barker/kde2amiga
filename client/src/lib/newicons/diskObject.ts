@@ -21,6 +21,8 @@ export function buildInfoFile(params: {
 }): Uint8Array {
   const { width, height, kind, normal, selected } = params;
 
+  const isDrawerLike = kind === 'drawer' || kind === 'trashcan';
+
   const toolTypes = [
     ...encodeNewIconState(normal, 'IM1='),
     ...encodeNewIconState(selected, 'IM2='),
@@ -52,9 +54,11 @@ export function buildInfoFile(params: {
   w.writeDWord(1); // hasToolTypes
   w.writeLong(128 << 24); // currentX
   w.writeLong(128 << 24); // currentY
-  w.writeDWord(0); // hasDrawerData
+  w.writeDWord(isDrawerLike ? 1 : 0); // hasDrawerData
   w.writeDWord(0); // hasToolWindow
   w.writeDWord(8192); // stackSize
+
+  if (isDrawerLike) writeDrawerData(w);
 
   writeClassicImage(w, width, height, false);
   writeClassicImage(w, width, height, true);
@@ -68,6 +72,36 @@ export function buildInfoFile(params: {
   }
 
   return w.toUint8Array();
+}
+
+/**
+ * DrawerData (56 bytes): a NewWindow (48 bytes) followed by CurrentX/CurrentY (LONG each).
+ * Written immediately after the 78-byte DiskObject header and before the images, for
+ * do_Type 2 (drawer) and 5 (trashcan) icons only.
+ */
+function writeDrawerData(w: BinaryWriter): void {
+  // NewWindow (48 bytes)
+  w.writeWord(50); // LeftEdge
+  w.writeWord(40); // TopEdge
+  w.writeWord(400); // Width
+  w.writeWord(150); // Height
+  w.writeUByte(0xff); // DetailPen
+  w.writeUByte(0xff); // BlockPen
+  w.writeDWord(0); // IDCMPFlags
+  w.writeDWord(0); // Flags
+  w.writeDWord(0); // FirstGadget
+  w.writeDWord(0); // CheckMark
+  w.writeDWord(0); // Title
+  w.writeDWord(0); // Screen
+  w.writeDWord(0); // BitMap
+  w.writeWord(0); // MinWidth
+  w.writeWord(0); // MinHeight
+  w.writeWord(0); // MaxWidth
+  w.writeWord(0); // MaxHeight
+  w.writeWord(0); // Type
+  // CurrentX, CurrentY (LONG each)
+  w.writeLong(0);
+  w.writeLong(0);
 }
 
 function writeClassicImage(w: BinaryWriter, width: number, height: number, selected: boolean): void {

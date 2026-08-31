@@ -40,6 +40,38 @@ describe('buildInfoFile', () => {
     expect(decoded.selected.pixels).toEqual(selected.pixels);
   });
 
+  it('writes a 56-byte DrawerData block for drawer and trashcan icons, and still decodes correctly', () => {
+    for (const kind of ['drawer', 'trashcan'] as const) {
+      const normal = makeState(4, 4);
+      const selected = makeState(4, 4);
+      const withDrawerData = buildInfoFile({ width: 4, height: 4, kind, normal, selected });
+      const withoutDrawerData = buildInfoFile({ width: 4, height: 4, kind: 'project', normal, selected });
+
+      // The only structural difference between a drawer/trashcan icon and a plain one
+      // should be the 56 extra DrawerData bytes (plus the do_Type byte and the
+      // hasDrawerData flag itself).
+      expect(withDrawerData.length).toBe(withoutDrawerData.length + 56);
+
+      const decoded = decodeInfoFileForTest(withDrawerData);
+      expect(decoded.width).toBe(4);
+      expect(decoded.height).toBe(4);
+      expect(decoded.normal.palette).toEqual(normal.palette);
+      expect(decoded.normal.pixels).toEqual(normal.pixels);
+      expect(decoded.selected.pixels).toEqual(selected.pixels);
+    }
+  });
+
+  it('does not write DrawerData for non-drawer, non-trashcan kinds', () => {
+    const normal = makeState(4, 4);
+    const selected = makeState(4, 4);
+    for (const kind of ['disk', 'tool', 'project'] as const) {
+      const bytes = buildInfoFile({ width: 4, height: 4, kind, normal, selected });
+      // hasDrawerData is the DWORD at offset 66 (see the 78-byte header layout).
+      const hasDrawerData = (bytes[66] << 24) | (bytes[67] << 16) | (bytes[68] << 8) | bytes[69];
+      expect(hasDrawerData).toBe(0);
+    }
+  });
+
   it('round-trips a 32x32 icon whose payload spans multiple IM1=/IM2= lines', () => {
     function makeBigState(width: number, height: number): NewIconState {
       const palette: [number, number, number][] = Array.from({ length: 16 }, (_, i) => [
