@@ -78,7 +78,7 @@ describe('createFetchProxyHandler', () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        headers: new Headers({ 'content-type': 'application/zip', 'content-length': String(100 * 1024 * 1024) }),
+        headers: new Headers({ 'content-type': 'application/zip', 'content-length': String(101 * 1024 * 1024) }),
         arrayBuffer: async () => new ArrayBuffer(0),
       }),
     );
@@ -90,14 +90,14 @@ describe('createFetchProxyHandler', () => {
   });
 
   it('returns 413 when the body exceeds the cap despite a missing content-length', async () => {
-    const oneMegabyte = new Uint8Array(1024 * 1024);
+    const tenMegabytes = new Uint8Array(10 * 1024 * 1024);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ 'content-type': 'application/zip' }), // deliberately no content-length
-        body: streamOf(...Array(26).fill(oneMegabyte)),
+        body: streamOf(...Array(11).fill(tenMegabytes)),
       }),
     );
 

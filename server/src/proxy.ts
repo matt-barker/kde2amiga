@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 
-export const MAX_PROXY_BYTES = 25 * 1024 * 1024;
+export const MAX_PROXY_BYTES = 100 * 1024 * 1024;
 
 export function createFetchProxyHandler(): RequestHandler {
   return async (req, res) => {
