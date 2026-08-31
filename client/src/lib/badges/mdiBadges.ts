@@ -11,8 +11,12 @@ export async function fetchMdiBadgeSvg(iconName: string, proxyBaseUrl?: string):
   }
 
   if (proxyBaseUrl) {
-    const proxied = await fetch(`${proxyBaseUrl}?url=${encodeURIComponent(directUrl)}`);
-    if (proxied.ok) return proxied.text();
+    try {
+      const proxied = await fetch(`${proxyBaseUrl}?url=${encodeURIComponent(directUrl)}`);
+      if (proxied.ok) return proxied.text();
+    } catch {
+      // fall through to the descriptive error below
+    }
   }
 
   throw new Error(`Could not fetch MDI badge "${iconName}" (direct fetch failed${proxyBaseUrl ? ' and proxy fetch failed' : ', no proxy configured'})`);

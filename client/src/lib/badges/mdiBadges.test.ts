@@ -38,4 +38,14 @@ describe('fetchMdiBadgeSvg', () => {
       /not-a-real-icon/,
     );
   });
+
+  it('throws a descriptive error when the proxy fetch itself throws', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockRejectedValueOnce(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchMdiBadgeSvg('music-note', '/api/fetch-url')).rejects.toThrow(/music-note/);
+  });
 });

@@ -1,9 +1,18 @@
 import JSZip from 'jszip';
 
+/**
+ * The five AmigaOS default-icon fallback slots (`ENVARC:Sys/def_*.info`).
+ * Deliberately NOT `IconKind` from ../newicons/diskObject: that type models the
+ * DiskObject type byte, which has eight legal values (device, kickstart and
+ * appicon besides these five). The two sets coincide today but mean different
+ * things, and widening IconKind must not widen this.
+ */
+export type DefaultIconRole = 'drawer' | 'disk' | 'tool' | 'project' | 'trashcan';
+
 export interface ConvertedIcon {
   name: string;
   infoBytes: Uint8Array;
-  role?: 'drawer' | 'disk' | 'tool' | 'project' | 'trashcan';
+  role?: DefaultIconRole;
 }
 
 const README_TEXT = `kde2amiga converted icons
