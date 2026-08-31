@@ -12,16 +12,24 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
       <input
         id="output-size"
         type="number"
+        min="1"
         value={config.outputSizePx}
-        onChange={(e) => onChange({ ...config, outputSizePx: Number(e.target.value) })}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          if (Number.isFinite(next) && next > 0) onChange({ ...config, outputSizePx: next });
+        }}
       />
 
       <label htmlFor="max-colors">Max colors</label>
       <input
         id="max-colors"
         type="number"
+        min="1"
         value={config.maxColors}
-        onChange={(e) => onChange({ ...config, maxColors: Number(e.target.value) })}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          if (Number.isFinite(next) && next > 0) onChange({ ...config, maxColors: next });
+        }}
       />
 
       <label htmlFor="selected-effect">Selected-state effect</label>

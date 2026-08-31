@@ -25,4 +25,12 @@ describe('JobConfigForm', () => {
     fireEvent.change(screen.getByLabelText(/output size/i), { target: { value: '64' } });
     expect(onChange).toHaveBeenCalledWith({ ...baseConfig, outputSizePx: 64 });
   });
+
+  it('ignores an emptied numeric field instead of propagating zero', () => {
+    const onChange = vi.fn();
+    render(<JobConfigForm config={baseConfig} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText(/output size/i), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/max colors/i), { target: { value: '' } });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
