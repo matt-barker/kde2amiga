@@ -16,6 +16,7 @@ export default function App() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   function handleThemeLoaded(loadedZip: JSZip, loadedIcons: ThemeIcon[]) {
     setZip(loadedZip);
@@ -30,18 +31,20 @@ export default function App() {
     if (!zip) return;
     setConverting(true);
     setError(null);
+    setProgress({ done: 0, total: 0 });
     try {
       const inputs: JobIconInput[] = icons
         .filter((icon) => selected.has(`${icon.category}/${icon.name}`))
         .map((icon) => ({ icon, kind: 'project' as const }));
 
-      const blob = await runConversionJob(zip, inputs, config);
+      const blob = await runConversionJob(zip, inputs, config, (done, total) => setProgress({ done, total }));
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       setDownloadUrl(URL.createObjectURL(blob));
     } catch (err) {
       setError(`Conversion failed: ${(err as Error).message}`);
     } finally {
       setConverting(false);
+      setProgress(null);
     }
   }
 
@@ -56,6 +59,9 @@ export default function App() {
           <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
             {converting ? 'Converting…' : 'Convert'}
           </button>
+          {converting && progress && progress.total > 0 && (
+            <p>Converting {progress.done} of {progress.total}…</p>
+          )}
         </>
       )}
       {error && <p role="alert">{error}</p>}
