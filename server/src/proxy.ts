@@ -41,13 +41,27 @@ export function createFetchProxyHandler(): RequestHandler {
       return;
     }
 
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    if (buffer.byteLength > MAX_PROXY_BYTES) {
-      res.status(413).json({ error: `Response exceeds the ${MAX_PROXY_BYTES}-byte size cap` });
+    const reader = upstream.body?.getReader();
+    if (!reader) {
+      res.status(502).json({ error: 'Upstream response had no readable body' });
       return;
     }
 
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_PROXY_BYTES) {
+        await reader.cancel();
+        res.status(413).json({ error: `Response exceeds the ${MAX_PROXY_BYTES}-byte size cap` });
+        return;
+      }
+      chunks.push(value);
+    }
+
     res.setHeader('content-type', upstream.headers.get('content-type') ?? 'application/octet-stream');
-    res.status(200).send(buffer);
+    res.status(200).send(Buffer.concat(chunks));
   };
 }

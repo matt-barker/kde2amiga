@@ -7,6 +7,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+}
+
 function appWithProxy() {
   const app = express();
   app.get('/api/fetch-url', createFetchProxyHandler());
@@ -31,7 +40,7 @@ describe('createFetchProxyHandler', () => {
         ok: true,
         status: 200,
         headers: new Headers({ 'content-type': 'application/zip', 'content-length': '3' }),
-        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        body: streamOf(new Uint8Array([1, 2, 3])),
       }),
     );
 
@@ -50,6 +59,24 @@ describe('createFetchProxyHandler', () => {
         status: 200,
         headers: new Headers({ 'content-type': 'application/zip', 'content-length': String(100 * 1024 * 1024) }),
         arrayBuffer: async () => new ArrayBuffer(0),
+      }),
+    );
+
+    const res = await request(appWithProxy()).get(
+      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/huge.zip'),
+    );
+    expect(res.status).toBe(413);
+  });
+
+  it('returns 413 when the body exceeds the cap despite a missing content-length', async () => {
+    const oneMegabyte = new Uint8Array(1024 * 1024);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/zip' }), // deliberately no content-length
+        body: streamOf(...Array(26).fill(oneMegabyte)),
       }),
     );
 
