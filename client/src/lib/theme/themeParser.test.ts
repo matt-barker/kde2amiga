@@ -102,4 +102,56 @@ describe('parseTheme', () => {
     expect(icons).toHaveLength(1);
     expect(icons[0].sizePx).toBe(256);
   });
+
+  describe('locating the size/scalable marker rather than counting wrapper directories', () => {
+    it.each([
+      { path: '48x48/apps/firefox.svg', category: 'apps', sizePx: 48 },
+      { path: 'Papirus/48x48/apps/firefox.svg', category: 'apps', sizePx: 48 },
+      {
+        path: 'papirus-icon-theme-master/Papirus/48x48/apps/firefox.svg',
+        category: 'apps',
+        sizePx: 48,
+      },
+      { path: 'scalable/places/folder.svg', category: 'places', sizePx: 0 },
+      {
+        path: 'repo-master/Theme/scalable/places/sub/x.svg',
+        category: 'places/sub',
+        sizePx: 0,
+      },
+      { path: 'breeze/actions/22/go-up.svg', category: 'actions', sizePx: 22 },
+      { path: 'actions/22/go-up.svg', category: 'actions', sizePx: 22 },
+      { path: 'hicolor/48x48/apps/x.svg', category: 'apps', sizePx: 48 },
+    ])('$path -> category "$category", sizePx $sizePx', async ({ path, category, sizePx }) => {
+      const zip = new JSZip();
+      zip.file(path, path.endsWith('.svg') ? '<svg></svg>' : new Uint8Array([1, 2, 3]));
+
+      const icons = await parseTheme(zip);
+      expect(icons).toHaveLength(1);
+      expect(icons[0]).toMatchObject({ category, sizePx });
+    });
+
+    it('tolerates a two-level wrapper (GitHub repo dir + theme dir), as a real Papirus download has', async () => {
+      const zip = new JSZip();
+      zip.file('papirus-icon-theme-master/Papirus/index.theme', '[Icon Theme]\nName=Papirus');
+      zip.file('papirus-icon-theme-master/Papirus/scalable/places/folder.svg', '<svg></svg>');
+      zip.file(
+        'papirus-icon-theme-master/Papirus/48x48/apps/firefox.png',
+        new Uint8Array([1, 2, 3]),
+      );
+
+      const icons = await parseTheme(zip);
+      expect(icons).toHaveLength(2);
+      expect(icons.map((i) => i.name).sort()).toEqual(['firefox', 'folder']);
+      expect(icons.every((i) => i.category === 'places' || i.category === 'apps')).toBe(true);
+    });
+
+    it('drops the wrapper directory from the category in Breeze-style <category>/<size> layout', async () => {
+      const zip = new JSZip();
+      zip.file('breeze/actions/22/go-up.svg', '<svg></svg>');
+
+      const icons = await parseTheme(zip);
+      expect(icons).toHaveLength(1);
+      expect(icons[0].category).toBe('actions');
+    });
+  });
 });

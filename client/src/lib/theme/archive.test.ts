@@ -78,17 +78,20 @@ function buildTarGz(entries: Uint8Array[]): Uint8Array {
   return new Uint8Array(gzipSync(Buffer.from(tar)));
 }
 
+// Two wrapper levels, as a real GitHub download of Papirus actually unpacks:
+// the repo directory ("Papirus-master"), then the theme directory ("Papirus")
+// -- the repo ships Papirus, Papirus-Dark and Papirus-Light side by side.
 function buildThemeTarGz(): Uint8Array {
   const longMimeCategoryPath =
-    'Papirus-master/48x48/mimetypes/' +
+    'Papirus-master/Papirus/48x48/mimetypes/' +
     'a-very-long-nested-subdirectory-name-that-pushes-the-path-well-past-the-classic-100-byte-tar-name-field/' +
     'x-office-document.png';
 
   return buildTarGz([
-    fileEntry('Papirus-master/index.theme', '[Icon Theme]\nName=Papirus'),
-    dirEntry('Papirus-master/scalable/'),
-    fileEntry('Papirus-master/scalable/places/folder.svg', '<svg></svg>'),
-    fileEntry('Papirus-master/48x48/apps/firefox.png', new Uint8Array([1, 2, 3, 4])),
+    fileEntry('Papirus-master/Papirus/index.theme', '[Icon Theme]\nName=Papirus'),
+    dirEntry('Papirus-master/Papirus/scalable/'),
+    fileEntry('Papirus-master/Papirus/scalable/places/folder.svg', '<svg></svg>'),
+    fileEntry('Papirus-master/Papirus/48x48/apps/firefox.png', new Uint8Array([1, 2, 3, 4])),
     fileEntry('Papirus-master/LICENSE', 'GPL-3.0'),
     gnuLongNameEntry(longMimeCategoryPath),
     fileEntry('x-office-document.png', new Uint8Array([5, 6, 7, 8])),
@@ -112,13 +115,15 @@ describe('loadArchive', () => {
     const loaded = await loadArchive(tarGz);
 
     // index.theme should have made it through the memory filter.
-    expect(await loaded.file('Papirus-master/index.theme')?.async('string')).toContain('Papirus');
+    expect(await loaded.file('Papirus-master/Papirus/index.theme')?.async('string')).toContain(
+      'Papirus',
+    );
 
     // The non-icon LICENSE file must be dropped by the memory filter.
     expect(loaded.file('Papirus-master/LICENSE')).toBeNull();
 
     // The directory entry must not have produced a JSZip file entry.
-    expect(loaded.file('Papirus-master/scalable/')).toBeNull();
+    expect(loaded.file('Papirus-master/Papirus/scalable/')).toBeNull();
 
     const icons = await parseTheme(loaded);
     const byName = Object.fromEntries(icons.map((i) => [i.name, i]));
