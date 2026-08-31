@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.local
+
+# Local planning/spec docs and agent scratch state
+docs/superpowers/
+.superpowers/
