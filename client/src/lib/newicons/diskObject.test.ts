@@ -40,7 +40,7 @@ describe('buildInfoFile', () => {
     expect(decoded.selected.pixels).toEqual(selected.pixels);
   });
 
-  it('writes a 56-byte DrawerData block for drawer and trashcan icons, and still decodes correctly', () => {
+  it('writes a 56-byte DrawerData block plus a 6-byte OS2.x tail for drawer and trashcan icons, and still decodes correctly', () => {
     for (const kind of ['drawer', 'trashcan'] as const) {
       const normal = makeState(4, 4);
       const selected = makeState(4, 4);
@@ -48,9 +48,15 @@ describe('buildInfoFile', () => {
       const withoutDrawerData = buildInfoFile({ width: 4, height: 4, kind: 'project', normal, selected });
 
       // The only structural difference between a drawer/trashcan icon and a plain one
-      // should be the 56 extra DrawerData bytes (plus the do_Type byte and the
-      // hasDrawerData flag itself).
-      expect(withDrawerData.length).toBe(withoutDrawerData.length + 56);
+      // should be the 56-byte DrawerData block plus the 6-byte OS2.x/3.x dd_Flags/
+      // dd_ViewModes tail written after ToolTypes (plus the do_Type byte and the
+      // hasDrawerData flag itself, which don't affect length).
+      expect(withDrawerData.length).toBe(withoutDrawerData.length + 56 + 6);
+
+      // The last 6 bytes of the file must be the zeroed dd_Flags (LONG) + dd_ViewModes
+      // (UWORD) tail; without it a real decoder walks off the end of the buffer.
+      const tail = withDrawerData.slice(withDrawerData.length - 6);
+      expect(Array.from(tail)).toEqual([0, 0, 0, 0, 0, 0]);
 
       const decoded = decodeInfoFileForTest(withDrawerData);
       expect(decoded.width).toBe(4);

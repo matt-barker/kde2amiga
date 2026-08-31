@@ -7,9 +7,13 @@ function clamp(n: number): number {
 }
 
 function nearestPaletteIndex(color: Rgb, palette: Rgb[]): number {
-  let bestIndex = 0;
+  // Index 0 is the reserved transparent slot; never let a transformed foreground colour
+  // re-snap onto it, mirroring quantize.ts's buildSharedPalette.
+  const startIndex = palette.length > 1 ? 1 : 0;
+  let bestIndex = startIndex;
   let bestDistance = Infinity;
   palette.forEach((candidate, index) => {
+    if (index < startIndex) return;
     const distance =
       (candidate[0] - color[0]) ** 2 + (candidate[1] - color[1]) ** 2 + (candidate[2] - color[2]) ** 2;
     if (distance < bestDistance) {

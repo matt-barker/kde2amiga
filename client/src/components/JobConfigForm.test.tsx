@@ -34,10 +34,10 @@ describe('JobConfigForm', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('clamps an output size above 256, since the NewIcons header only has one byte for it', () => {
+  it('clamps an output size above 222, since the NewIcons header only has one byte for width + 33', () => {
     const onChange = vi.fn();
     render(<JobConfigForm config={baseConfig} onChange={onChange} />);
     fireEvent.change(screen.getByLabelText(/output size/i), { target: { value: '9999' } });
-    expect(onChange).toHaveBeenCalledWith({ ...baseConfig, outputSizePx: 256 });
+    expect(onChange).toHaveBeenCalledWith({ ...baseConfig, outputSizePx: 222 });
   });
 });

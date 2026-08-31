@@ -188,6 +188,11 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
     for (let i = 0; i < count; i++) toolTypes.push(readText(r));
   }
 
+  // OS2.x/3.x drawer tail (6 bytes): dd_Flags (LONG) + dd_ViewModes (UWORD), written after
+  // ToolTypes for drawer/trashcan icons carrying userData (see writeDrawerData's counterpart
+  // in diskObject.ts / icon.js's `if (icon.hasDrawerData && icon.userData)`).
+  if (hasDrawerData) r.skip(6);
+
   const im1Lines = toolTypes.filter((t) => t.startsWith('IM1=')).map((t) => t.slice(4));
   const im2Lines = toolTypes.filter((t) => t.startsWith('IM2=')).map((t) => t.slice(4));
 

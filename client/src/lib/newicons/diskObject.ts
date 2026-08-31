@@ -71,6 +71,14 @@ export function buildInfoFile(params: {
     w.writeUByte(0);
   }
 
+  // OS2.x/3.x drawer tail (6 bytes): dd_Flags (LONG) + dd_ViewModes (UWORD).
+  // Required whenever hasDrawerData && userData (userData = 1 for all icons we write).
+  // Zeros mean DDFLAGS_SHOWDEFAULT / DDVM_BYDEFAULT, i.e. "use Workbench's defaults".
+  if (isDrawerLike) {
+    w.writeDWord(0); // dd_Flags
+    w.writeWord(0); // dd_ViewModes
+  }
+
   return w.toUint8Array();
 }
 

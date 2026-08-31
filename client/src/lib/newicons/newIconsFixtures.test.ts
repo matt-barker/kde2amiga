@@ -42,6 +42,9 @@ describe('real NewIcons fixtures', () => {
     expect(icon.normal.palette).toHaveLength(8);
     expect(icon.normal.palette[0]).toEqual([165, 168, 168]);
     expect(icon.normal.palette[7]).toEqual([255, 255, 255]);
+    // Guards the per-line floor, not just the post-trim length: continuous-stream decoding
+    // would yield 1444 raw pixels here (wrong), not 1443.
+    expect(icon.normal.decodedPixelCount).toBe(1443);
     expect(icon.normal.pixels).toHaveLength(36 * 40);
     for (const p of icon.normal.pixels) expect(p).toBeLessThan(8);
 
@@ -70,6 +73,9 @@ describe('real NewIcons fixtures', () => {
     expect(icon.normal.palette).toHaveLength(32);
     expect(icon.normal.palette[0]).toEqual([149, 149, 149]);
     expect(icon.normal.palette[31]).toEqual([17, 17, 17]);
+    // Guards the per-line floor, not just the post-trim length: continuous-stream decoding
+    // would yield 1765 raw pixels here (wrong), not 1764.
+    expect(icon.normal.decodedPixelCount).toBe(1764);
     expect(icon.normal.pixels).toHaveLength(42 * 42);
 
     expect(icon.selected.width).toBe(42);

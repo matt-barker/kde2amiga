@@ -13,14 +13,14 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
         id="output-size"
         type="number"
         min="1"
-        max="256"
+        max="222"
         value={config.outputSizePx}
         onChange={(e) => {
           const next = Number(e.target.value);
-          // The NewIcons header encodes width + 33 in a single byte, so anything above
-          // 256 would corrupt it.
+          // The NewIcons header encodes width + 33 in a single byte, and BinaryWriter.writeString
+          // masks with & 0xff, so width + 33 must stay <= 255, i.e. width <= 222.
           if (Number.isFinite(next) && next > 0) {
-            onChange({ ...config, outputSizePx: Math.min(next, 256) });
+            onChange({ ...config, outputSizePx: Math.min(next, 222) });
           }
         }}
       />
