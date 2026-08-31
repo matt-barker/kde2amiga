@@ -91,15 +91,16 @@ export function mapImageToPalette(image: RgbaImage, palette: Rgb[]): number[] {
       continue;
     }
     const pixel: Rgb = [image.data[i], image.data[i + 1], image.data[i + 2]];
-    let bestIndex = 0;
+    const startIndex = palette.length > 1 ? 1 : 0;
+    let bestIndex = startIndex;
     let bestDistance = Infinity;
-    palette.forEach((color, index) => {
-      const distance = colorDistance(pixel, color);
+    for (let index = startIndex; index < palette.length; index++) {
+      const distance = colorDistance(pixel, palette[index]);
       if (distance < bestDistance) {
         bestDistance = distance;
         bestIndex = index;
       }
-    });
+    }
     indices.push(bestIndex);
   }
   return indices;

@@ -34,6 +34,13 @@ describe('buildSharedPalette', () => {
     expect(palette.length).toBeLessThanOrEqual(maxColorsForSingleLine());
     expect(palette.length).toBe(maxColorsForSingleLine());
   });
+
+  it('returns just the reserved slot for a fully-transparent image without throwing', () => {
+    const image = solidImage(4, 4, [0, 0, 0, 0]);
+    expect(() => buildSharedPalette([image], 8)).not.toThrow();
+    const palette = buildSharedPalette([image], 8);
+    expect(palette).toEqual([[0, 0, 0]]);
+  });
 });
 
 describe('mapImageToPalette', () => {
@@ -46,6 +53,14 @@ describe('mapImageToPalette', () => {
   it('maps opaque pixels to their nearest palette color', () => {
     const image = solidImage(1, 1, [12, 18, 29, 255]);
     const palette: [number, number, number][] = [[0, 0, 0], [10, 20, 30], [200, 200, 200]];
+    expect(mapImageToPalette(image, palette)).toEqual([1]);
+  });
+
+  it('maps an opaque near-black pixel to a real dark palette entry, never to index 0', () => {
+    // pixel (2,2,2) is nearer to reserved [0,0,0] than to [10,10,10], but index 0
+    // must be excluded from the search so opaque dark pixels don't become holes.
+    const image = solidImage(1, 1, [2, 2, 2, 255]);
+    const palette: [number, number, number][] = [[0, 0, 0], [10, 10, 10], [200, 200, 200]];
     expect(mapImageToPalette(image, palette)).toEqual([1]);
   });
 });

@@ -15,9 +15,23 @@ describe('applySelectedStateEffect', () => {
   });
 
   it('brighten pushes colors toward white and re-snaps to the palette', () => {
-    // black brightened by 60 -> (60,60,60), nearest palette entry is the mid-grey
-    const result = applySelectedStateEffect('brighten', palette, [0], 1, 1);
+    // mid-grey (100,100,100) brightened by 60 -> (160,160,160), which is nearer
+    // to (200,200,200) (distance 40^2*3=4800) than to (100,100,100) itself (60^2*3=10800)
+    // or (0,0,0) (160^2*3=76800).
+    const brightenPalette: [number, number, number][] = [
+      [0, 0, 0],
+      [100, 100, 100],
+      [200, 200, 200],
+    ];
+    const result = applySelectedStateEffect('brighten', brightenPalette, [1], 1, 1);
     expect(result).toEqual([2]);
+  });
+
+  it('leaves index 0 unchanged under every effect', () => {
+    for (const effect of ['invert', 'brighten', 'darken', 'tint', 'glowSurround'] as const) {
+      const result = applySelectedStateEffect(effect, palette, [0], 1, 1, [255, 255, 0]);
+      expect(result).toEqual([0]);
+    }
   });
 
   it('darken pushes colors toward black and re-snaps to the palette', () => {

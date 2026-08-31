@@ -47,6 +47,7 @@ export function applySelectedStateEffect(
 ): number[] {
   const remapCache = new Map<number, number>();
   const remap = (index: number): number => {
+    if (index === 0) return 0;
     const cached = remapCache.get(index);
     if (cached !== undefined) return cached;
     const transformed = transformColor(effect, palette[index], tintColor);
