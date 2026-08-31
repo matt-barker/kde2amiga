@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { encodeNewIconState } from './newIconsEncoder';
+import { decodeSevenBitGroupsForTest } from './sevenBitCodec';
 
 describe('encodeNewIconState', () => {
   it('produces IM1= lines each no longer than 127 characters', () => {
@@ -30,11 +31,10 @@ describe('encodeNewIconState', () => {
       { width: 2, height: 2, transparent: true, palette, pixels },
       'IM1=',
     );
-    const headerPayload = lines[0].slice(4); // strip "IM1="
-    expect(headerPayload.charCodeAt(0)).toBe(66); // 'B' -> transparent
-    expect(headerPayload.charCodeAt(1) - 33).toBe(2); // width
-    expect(headerPayload.charCodeAt(2) - 33).toBe(2); // height
-    const colorCount = ((headerPayload.charCodeAt(3) - 33) << 6) + (headerPayload.charCodeAt(4) - 33);
-    expect(colorCount).toBe(2);
+    const header = decodeSevenBitGroupsForTest(lines[0].slice(4, 9)); // strip "IM1=", take the 5 header chars
+    expect(header[0]).toBe(66); // 'B' -> transparent
+    expect(header[1] - 33).toBe(2); // width
+    expect(header[2] - 33).toBe(2); // height
+    expect(((header[3] - 33) << 6) + (header[4] - 33)).toBe(2); // colorCount
   });
 });

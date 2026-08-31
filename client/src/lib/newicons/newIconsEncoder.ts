@@ -19,20 +19,19 @@ export function encodeNewIconState(state: NewIconState, prefix: 'IM1=' | 'IM2=')
   const { width, height, transparent, palette, pixels } = state;
   const colorCount = palette.length;
 
-  // --- Line 1 payload: header (raw bytes) + palette (seven-bit encoded) ---
-  let firstLinePayload = String.fromCharCode(transparent ? 66 : 78); // 'B' or 'N'
-  firstLinePayload += String.fromCharCode(width + 33);
-  firstLinePayload += String.fromCharCode(height + 33);
-  firstLinePayload += String.fromCharCode(((colorCount >> 6) & 0x3f) + 33);
-  firstLinePayload += String.fromCharCode((colorCount & 0x3f) + 33);
-
-  const paletteBits = new BitWriter();
+  // --- Line 1 payload: header + full palette ---
+  const headerAndPalette = new BitWriter();
+  headerAndPalette.pushBits(transparent ? 66 : 78, 7); // 'B' or 'N', both < 128
+  headerAndPalette.pushBits(width + 33, 7);
+  headerAndPalette.pushBits(height + 33, 7);
+  headerAndPalette.pushBits(((colorCount >> 6) & 0x3f) + 33, 7);
+  headerAndPalette.pushBits((colorCount & 0x3f) + 33, 7);
   for (const [r, g, b] of palette) {
-    paletteBits.pushBits(r, 8);
-    paletteBits.pushBits(g, 8);
-    paletteBits.pushBits(b, 8);
+    headerAndPalette.pushBits(r, 8);
+    headerAndPalette.pushBits(g, 8);
+    headerAndPalette.pushBits(b, 8);
   }
-  firstLinePayload += encodeSevenBitGroups(paletteBits.toSevenBitGroups());
+  const firstLinePayload = encodeSevenBitGroups(headerAndPalette.toSevenBitGroups());
 
   // --- Remaining lines: pixel indices ---
   const bitCount = bitCountForColors(colorCount);
