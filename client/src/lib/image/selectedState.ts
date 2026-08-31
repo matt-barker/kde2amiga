@@ -66,16 +66,18 @@ export function applySelectedStateEffect(
       { index: 0, brightness: -1 },
     ).index;
 
+    const preGlow = result.slice();
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const i = y * width + x;
-        if (result[i] !== 0) continue; // only grow into background/transparent pixels
+        if (preGlow[i] !== 0) continue; // only grow into background/transparent pixels
         const neighbors = [
           [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
         ];
         const touchesForeground = neighbors.some(([nx, ny]) => {
           if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false;
-          return result[ny * width + nx] !== 0;
+          return preGlow[ny * width + nx] !== 0;
         });
         if (touchesForeground) result[i] = brightestIndex;
       }

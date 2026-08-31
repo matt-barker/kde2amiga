@@ -35,4 +35,10 @@ describe('applySelectedStateEffect', () => {
     const result = applySelectedStateEffect('glowSurround', palette, [1], 1, 1);
     expect(result.length).toBe(1);
   });
+
+  it('glowSurround grows only a 1px border, without cascading across the row', () => {
+    // palette[1] (white) is the brightest entry; row is [foreground, background, background]
+    const result = applySelectedStateEffect('glowSurround', palette, [1, 0, 0], 3, 1);
+    expect(result).toEqual([1, 1, 0]);
+  });
 });

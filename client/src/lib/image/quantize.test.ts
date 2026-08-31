@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildSharedPalette, mapImageToPalette, type RgbaImage } from './quantize';
+import { maxColorsForSingleLine } from '../newicons/paletteLimits';
 
 function solidImage(width: number, height: number, rgba: [number, number, number, number]): RgbaImage {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -21,6 +22,17 @@ describe('buildSharedPalette', () => {
     ];
     const palette = buildSharedPalette(images, 2);
     expect(palette.length).toBeLessThanOrEqual(2);
+  });
+
+  it('never exceeds the single-line palette ceiling even when asked for far more', () => {
+    const size = 16;
+    const data = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+      data.set([i, (i * 7) % 256, (i * 13) % 256, 255], i * 4);
+    }
+    const palette = buildSharedPalette([{ width: size, height: size, data }], 1000);
+    expect(palette.length).toBeLessThanOrEqual(maxColorsForSingleLine());
+    expect(palette.length).toBe(maxColorsForSingleLine());
   });
 });
 
