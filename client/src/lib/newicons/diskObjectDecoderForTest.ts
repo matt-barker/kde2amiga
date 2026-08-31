@@ -19,52 +19,128 @@ class Reader {
   set index(v: number) { this.pos = v; }
 }
 
-function decodeSevenBitLiteral(encoded: string): number[] {
-  const groups: number[] = [];
-  for (let i = 0; i < encoded.length; i++) {
-    const byte = encoded.charCodeAt(i);
-    groups.push(byte < 160 ? byte - 32 : byte - 81);
+/**
+ * Faithful port of `decodeBits` from steffest/Amiga-Icon-converter's `icon.js` (MIT).
+ *
+ *   byte <  160 -> 7 bits, value byte - 32
+ *   byte <  209 -> 7 bits, value byte - 81
+ *   byte >= 209 -> RLE: (byte - 208) groups of seven zero bits
+ *
+ * We deliberately emit literals only, but real NewIcons files in the wild do use the RLE
+ * branch (Apps.info's IM1 palette line is one such), so a decoder that claims to be the
+ * reference has to handle it.
+ */
+function decodeBits(data: string): string {
+  let bits = '';
+  for (let i = 0; i < data.length; i++) {
+    const byte = data.charCodeAt(i);
+    let chunk: string;
+    if (byte < 160) {
+      chunk = (byte - 32).toString(2);
+    } else if (byte < 209) {
+      chunk = (byte - 81).toString(2);
+    } else {
+      // RLE - only ever used for filling with zeroes
+      chunk = '';
+      for (let j = 0; j < byte - 208; j++) chunk += '0000000';
+      bits += chunk;
+      continue;
+    }
+    bits += chunk.padStart(7, '0');
   }
-  return groups;
+  return bits;
 }
 
-function groupsToBitString(groups: number[]): string {
-  return groups.map((g) => g.toString(2).padStart(7, '0')).join('');
+export interface DecodedNewIcon extends NewIconState {
+  /**
+   * Total pixels the reference decoder would have pushed, before trimming to width*height.
+   * Real files pad the last line, so this is >= width*height.
+   */
+  decodedPixelCount: number;
+  colorCount: number;
+  bitCount: number;
 }
 
-function decodeNewIconLines(lines: string[]): NewIconState {
-  const firstPayload = lines[0];
-  const firstBits = groupsToBitString(decodeSevenBitLiteral(firstPayload));
-  const transparent = decodeSevenBitLiteral(firstPayload.slice(0, 1))[0] === 66;
-  const width = decodeSevenBitLiteral(firstPayload.slice(1, 2))[0] - 33;
-  const height = decodeSevenBitLiteral(firstPayload.slice(2, 3))[0] - 33;
-  const hi = decodeSevenBitLiteral(firstPayload.slice(3, 4))[0] - 33;
-  const lo = decodeSevenBitLiteral(firstPayload.slice(4, 5))[0] - 33;
-  const colorCount = (hi << 6) + lo;
-
-  // header is 5 chars * 7 bits = 35 bits into firstBits; palette follows
-  const paletteBits = firstBits.slice(35, 35 + colorCount * 24);
-  const palette: [number, number, number][] = [];
-  for (let i = 0; i < colorCount; i++) {
-    const base = i * 24;
-    const r = parseInt(paletteBits.slice(base, base + 8), 2);
-    const g = parseInt(paletteBits.slice(base + 8, base + 16), 2);
-    const b = parseInt(paletteBits.slice(base + 16, base + 24), 2);
-    palette.push([r, g, b]);
-  }
+/**
+ * Faithful port of `decodeNewIcon` from steffest/Amiga-Icon-converter's `icon.js` (MIT),
+ * restricted to a single image state (one `IM1=`/`IM2=` group), with the "IMn=" prefix
+ * already stripped from each line.
+ *
+ * Two things this must get right, and which our encoder previously got wrong:
+ *  - The five header characters are read RAW off the first line; bit-decoding starts at
+ *    character 5.
+ *  - Each pixel line is an independent bit stream, floored to whole pixels; lines are
+ *    never concatenated before bit-splitting.
+ */
+export function decodeNewIconLines(lines: string[]): DecodedNewIcon {
+  const first = lines[0];
+  const transparent = first.charCodeAt(0) === 66; // 'B'
+  const width = first.charCodeAt(1) - 33;
+  const height = first.charCodeAt(2) - 33;
+  const colorCount = ((first.charCodeAt(3) - 33) << 6) + first.charCodeAt(4) - 33;
 
   let bitCount = 1;
   while (1 << bitCount < colorCount) bitCount++;
 
-  const pixelPayload = lines.slice(1).join('');
-  const pixelBits = groupsToBitString(decodeSevenBitLiteral(pixelPayload));
-  const pixelCount = width * height;
-  const pixels: number[] = [];
-  for (let i = 0; i < pixelCount; i++) {
-    pixels.push(parseInt(pixelBits.slice(i * bitCount, i * bitCount + bitCount), 2));
+  const paletteBits = decodeBits(first.substring(5));
+  const palette: [number, number, number][] = [];
+  const maxEntries = Math.floor(paletteBits.length / 8 / 3);
+  for (let i = 0; i < maxEntries; i++) {
+    const base = i * 24;
+    palette.push([
+      parseInt(paletteBits.substring(base, base + 8), 2),
+      parseInt(paletteBits.substring(base + 8, base + 16), 2),
+      parseInt(paletteBits.substring(base + 16, base + 24), 2),
+    ]);
   }
 
-  return { width, height, transparent, palette, pixels };
+  const pixels: number[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const bits = decodeBits(lines[i]);
+    const max = Math.floor(bits.length / bitCount);
+    for (let p = 0; p < max; p++) {
+      pixels.push(parseInt(bits.substring(p * bitCount, p * bitCount + bitCount), 2));
+    }
+  }
+
+  return {
+    width,
+    height,
+    transparent,
+    colorCount,
+    bitCount,
+    // The reference keeps every palette entry the bits allow, including padding entries;
+    // only the first colorCount of them are real.
+    palette: palette.slice(0, colorCount),
+    decodedPixelCount: pixels.length,
+    pixels: pixels.slice(0, width * height),
+  };
+}
+
+/** Reference `readIconImage`, without keeping the pixels: it only needs to advance the cursor. */
+function skipClassicImage(r: Reader): void {
+  r.word(); // leftEdge
+  r.word(); // topEdge
+  const imgWidth = r.word();
+  const imgHeight = r.word();
+  const depth = r.word();
+  const hasImageData = r.dword();
+  r.ubyte(); // planePick
+  r.ubyte(); // planeOnOff
+  r.dword(); // nextImage
+  if (hasImageData) {
+    const rowBytes = ((imgWidth + 15) >> 4) << 1;
+    r.skip(rowBytes * imgHeight * depth);
+  }
+}
+
+/** Reference `readText`: DWORD length (including the trailing NUL), then that many bytes. */
+function readText(r: Reader): string {
+  const len = r.dword();
+  let s = '';
+  for (let i = 0; i < len - 1; i++) s += String.fromCharCode(r.ubyte());
+  r.ubyte(); // NUL
+  return s;
 }
 
 export function decodeInfoFileForTest(bytes: Uint8Array) {
@@ -80,7 +156,7 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
   r.word(); // activation
   r.word(); // gadgetType
   r.dword(); // gadgetRender
-  r.dword(); // selectRender
+  const selectRender = r.dword();
   r.dword(); // gadgetText
   r.dword(); // mutualExclude
   r.dword(); // specialInfo
@@ -88,38 +164,28 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
   r.dword(); // userData
   const type = r.ubyte();
   r.ubyte(); // padding
-  r.dword(); // hasDefaultTool
+  const hasDefaultTool = r.dword();
   const hasToolTypes = r.dword();
   r.dword(); // currentX
   r.dword(); // currentY
-  r.dword(); // hasDrawerData
+  const hasDrawerData = r.dword();
   r.dword(); // hasToolWindow
   r.dword(); // stackSize
+  // total header size 78 bytes
 
-  // two classic images
-  for (let i = 0; i < 2; i++) {
-    r.word(); r.word(); // leftEdge, topEdge
-    const imgWidth = r.word();
-    const imgHeight = r.word();
-    const depth = r.word();
-    r.dword(); // hasImageData
-    r.ubyte(); r.ubyte(); // planePick, planeOnOff
-    r.dword(); // nextImage
-    const rowBytes = ((imgWidth + 15) >> 4) << 1;
-    r.skip(rowBytes * imgHeight * depth);
-  }
+  if (hasDrawerData) r.skip(56); // OS1.x DrawerData, as the reference skips it
+
+  // The reference always reads a first image, and a second one only if selectRender is set.
+  skipClassicImage(r);
+  if (selectRender) skipClassicImage(r);
+
+  if (hasDefaultTool) readText(r);
 
   const toolTypes: string[] = [];
   if (hasToolTypes) {
     const countField = r.dword();
     const count = countField ? countField / 4 - 1 : 0;
-    for (let i = 0; i < count; i++) {
-      const len = r.dword();
-      let s = '';
-      for (let j = 0; j < len - 1; j++) s += String.fromCharCode(r.ubyte());
-      r.ubyte(); // NUL
-      toolTypes.push(s);
-    }
+    for (let i = 0; i < count; i++) toolTypes.push(readText(r));
   }
 
   const im1Lines = toolTypes.filter((t) => t.startsWith('IM1=')).map((t) => t.slice(4));
@@ -130,7 +196,15 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
     type,
     width,
     height,
+    toolTypes,
+    /** IM1= payloads with the 4-character prefix stripped, in file order. */
+    im1Lines,
+    /** IM2= payloads with the 4-character prefix stripped, in file order. */
+    im2Lines,
     normal: decodeNewIconLines(im1Lines),
     selected: decodeNewIconLines(im2Lines),
   };
 }
+
+/** Exposed so tests can inspect raw bit lengths per line. */
+export { decodeBits as decodeBitsForTest };

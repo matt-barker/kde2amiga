@@ -56,6 +56,13 @@ describe('buildInfoFile', () => {
     const bytes = buildInfoFile({ width: 32, height: 32, kind: 'tool', normal, selected });
     const decoded = decodeInfoFileForTest(bytes);
 
+    // Every ToolType line must fit the 127-character limit Workbench imposes.
+    for (const line of decoded.toolTypes) expect(line.length).toBeLessThanOrEqual(127);
+    // 16 colours -> 4 bits/pixel -> floor(123*7/4) = 215 pixels per line -> 5 pixel lines,
+    // plus the header/palette line: 4 + 5 + ceil(16*24/7) = 64 characters.
+    expect(decoded.im1Lines).toHaveLength(6);
+    expect(decoded.im1Lines[0]).toHaveLength(60); // 64 minus the stripped "IM1=" prefix
+
     expect(decoded.width).toBe(32);
     expect(decoded.height).toBe(32);
     expect(decoded.normal.width).toBe(32);
