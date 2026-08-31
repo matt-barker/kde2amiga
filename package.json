@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix server run dev & npm --prefix client run dev",
-    "test": "npm --prefix client test"
+    "test": "npm --prefix client test && npm --prefix server test"
   },
   "devDependencies": {}
 }
