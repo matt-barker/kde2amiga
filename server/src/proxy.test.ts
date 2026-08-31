@@ -48,7 +48,28 @@ describe('createFetchProxyHandler', () => {
       '/api/fetch-url?url=' + encodeURIComponent('https://example.com/theme.zip'),
     );
     expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['content-type']).toBe('application/octet-stream');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-disposition']).toBe('attachment');
+  });
+
+  it('never reflects an upstream content-type, even text/html', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html', 'content-length': '3' }),
+        body: streamOf(new Uint8Array([1, 2, 3])),
+      }),
+    );
+
+    const res = await request(appWithProxy()).get(
+      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/evil.html'),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/octet-stream');
+    expect(res.headers['content-type']).not.toMatch(/html/);
   });
 
   it('returns 413 when the upstream content-length exceeds the size cap', async () => {

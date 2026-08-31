@@ -24,7 +24,7 @@ export function createFetchProxyHandler(): RequestHandler {
 
     let upstream: Response;
     try {
-      upstream = await fetch(target.toString());
+      upstream = await fetch(target.toString(), { signal: AbortSignal.timeout(30_000) });
     } catch {
       res.status(502).json({ error: 'Failed to fetch the requested URL' });
       return;
@@ -61,7 +61,12 @@ export function createFetchProxyHandler(): RequestHandler {
       chunks.push(value);
     }
 
-    res.setHeader('content-type', upstream.headers.get('content-type') ?? 'application/octet-stream');
+    // Never reflect the upstream content-type: an attacker-controlled response could
+    // set text/html and get script served from this app's own origin. The client only
+    // ever reads this body as a zip blob, so a fixed generic type is safe.
+    res.setHeader('content-type', 'application/octet-stream');
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('content-disposition', 'attachment');
     res.status(200).send(Buffer.concat(chunks));
   };
 }

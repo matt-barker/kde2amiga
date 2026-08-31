@@ -10,6 +10,7 @@ app.use(express.static(CLIENT_DIST));
 
 app.get('/api/fetch-url', createFetchProxyHandler());
 
-app.listen(PORT, () => {
+// v1 is local-only: bind to loopback explicitly rather than all interfaces.
+app.listen(Number(PORT), '127.0.0.1', () => {
   console.log(`kde2amiga server listening on http://localhost:${PORT}`);
 });
