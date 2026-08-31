@@ -2,7 +2,11 @@ import type { NewIconState } from './newIconsEncoder';
 
 class Reader {
   private pos = 0;
-  constructor(private bytes: Uint8Array) {}
+  private bytes: Uint8Array;
+
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
+  }
   ubyte(): number { return this.bytes[this.pos++]; }
   word(): number { const v = (this.bytes[this.pos] << 8) | this.bytes[this.pos + 1]; this.pos += 2; return v; }
   dword(): number {
