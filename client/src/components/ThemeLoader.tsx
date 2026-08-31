@@ -16,7 +16,8 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, icons: ThemeIco
       }
       setError(null);
       props.onThemeLoaded(zip, icons);
-    } catch {
+    } catch (err) {
+      console.error('Failed to read theme zip:', err);
       setError('That file could not be read as a zip archive.');
     }
   }
@@ -36,7 +37,8 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, icons: ThemeIco
         return;
       }
       await loadFromZipData(await response.blob());
-    } catch {
+    } catch (err) {
+      console.error('Failed to fetch theme URL:', err);
       setError('Could not fetch that URL.');
     }
   }
