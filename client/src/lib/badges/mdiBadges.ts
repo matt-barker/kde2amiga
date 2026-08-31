@@ -1,6 +1,11 @@
 const MDI_CDN_BASE = 'https://cdn.jsdelivr.net/npm/@mdi/svg/svg';
+const VALID_ICON_NAME = /^[a-z0-9-]+$/;
 
 export async function fetchMdiBadgeSvg(iconName: string, proxyBaseUrl?: string): Promise<string> {
+  if (!VALID_ICON_NAME.test(iconName)) {
+    throw new Error(`Invalid MDI icon name "${iconName}"`);
+  }
+
   const directUrl = `${MDI_CDN_BASE}/${iconName}.svg`;
 
   try {

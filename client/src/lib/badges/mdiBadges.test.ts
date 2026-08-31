@@ -48,4 +48,12 @@ describe('fetchMdiBadgeSvg', () => {
 
     await expect(fetchMdiBadgeSvg('music-note', '/api/fetch-url')).rejects.toThrow(/music-note/);
   });
+
+  it('rejects an icon name that would escape the CDN path, without ever calling fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchMdiBadgeSvg('../../etc/passwd')).rejects.toThrow(/Invalid MDI icon name/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
