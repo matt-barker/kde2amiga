@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createFetchProxyHandler } from './proxy';
+import { createFetchProxyHandler } from './proxy.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
