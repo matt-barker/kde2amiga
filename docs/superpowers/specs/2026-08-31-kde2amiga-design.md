@@ -17,6 +17,10 @@ made publicly available later.
 - Support tagging specific converted icons as AmigaOS-wide default icons
   (drawer, disk, tool, project, trashcan) so one icon can replace the
   fallback icon for an entire object type system-wide.
+- Support overlaying a Material Design Icons (MDI) badge onto a selected
+  base icon before conversion (e.g. stamping a music note onto a folder
+  icon to create a music-folder icon), with recoloring and a legibility
+  treatment (outline/shadow) so the badge doesn't blend into the base icon.
 - Be simple to spin up locally now, with a documented (not yet built) path
   to Docker/Unraid hosting later.
 
@@ -47,6 +51,27 @@ NewIcons encoding happens in the browser.
   to enumerate available icons (name, category, sizes, formats present).
 - **Decode**: rasterizes SVGs to bitmaps via `<canvas>` at the user-chosen
   output size; loads PNGs directly and resizes if needed.
+- **Badge overlay** (optional, per icon): composites an MDI badge onto a
+  selected base icon's full-color image, before quantization. Configurable
+  per application:
+  - Badge source: fetched live from the full Material Design Icons set via
+    a CDN that serves individual SVGs with permissive CORS (e.g.
+    jsdelivr's `@mdi/svg` package), so this can likely be a direct
+    client-side fetch with no proxy involved; falls back to the existing
+    URL-fetch proxy if a given CDN doesn't allow direct browser fetches.
+  - Badge color: user-chosen solid recolor of the MDI SVG (MDI icons are
+    single-color/monochrome, so recoloring is a straightforward fill
+    swap).
+  - Placement: corner preset (bottom-right / bottom-left / top-right /
+    top-left / center) plus a size-relative-to-base-icon scale slider.
+  - Legibility treatment: two independent optional toggles — a solid
+    outline/stroke around the badge shape (auto-contrasted or user-set
+    color), and a soft drop shadow — either, both, or neither can be
+    enabled.
+  - The composited image (base + badge + outline/shadow) is what feeds
+    into quantization below, so badge colors end up in the shared palette
+    like everything else and there's no separate palette-mapping pass for
+    badges.
 - **Quantize**: builds one shared palette (default 256 colors, user
   configurable, capped appropriately for AGA/NewIcons) across every icon
   selected for the current job, then maps each icon's pixels onto it.
@@ -86,11 +111,15 @@ NewIcons encoding happens in the browser.
 3. **Configure job** — output size (single size per job, user-configurable),
    palette size, selected-state effect. Palette strategy is fixed as
    shared/global (not user-configurable).
-4. **Assign special roles (optional)** — mark converted icons as
+4. **Add badge overlays (optional, per icon)** — pick a base icon, search/
+   select an MDI badge, set its color, corner placement, scale, and
+   outline/shadow legibility options; preview the composited result before
+   it's queued for conversion.
+5. **Assign special roles (optional)** — mark converted icons as
    Drawer/Disk/Tool/Project/Trashcan defaults.
-5. **Convert** — runs entirely client-side; per-icon progress and a live
+6. **Convert** — runs entirely client-side; per-icon progress and a live
    preview grid (normal + selected states) as icons complete.
-6. **Download** — one zip: converted `.info` files at top level, tagged
+7. **Download** — one zip: converted `.info` files at top level, tagged
    defaults under `Sys/`, plus README.
 
 ## Error handling
@@ -100,6 +129,9 @@ NewIcons encoding happens in the browser.
   skipped with a per-icon warning; rest of the batch continues.
 - URL fetch failures (bad URL, non-zip response, oversized download) →
   surfaced in the UI; proxy enforces a size cap.
+- MDI badge fetch failures (CDN unreachable, icon name not found) →
+  surfaced inline in the badge picker; doesn't block conversion of icons
+  that don't use a badge.
 - Quantization/edge cases (icons with more distinct colors than fit even
   pre-quantization, fully transparent icons, degenerate tiny images) →
   handled with sane fallbacks; never aborts the whole batch.
@@ -139,3 +171,6 @@ and left as documented future work once the tool is validated locally.
 - Practical palette size cap (256 is the NewIcons/AGA ceiling, but a smaller
   default may look better across a themed icon set — needs visual testing
   against the real hardware).
+- Confirm which MDI-serving CDN reliably sends permissive CORS headers for
+  direct client-side SVG fetches, and what search/browse UI (name search
+  vs. category browse) works best for picking a badge from ~7000 icons.
