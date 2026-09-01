@@ -4,6 +4,18 @@
  * into `loadArchive` rather than buffering it into memory first, so tests need
  * a working `.stream()` under jsdom too. This builds it from `arrayBuffer()`,
  * which jsdom does implement, and enqueues the whole thing as one chunk.
+ *
+ * Limitation: this polyfill fully buffers the Blob via `arrayBuffer()` before
+ * handing back a single-chunk stream, so it cannot tell a genuinely
+ * incremental consumer apart from one that buffers and re-wraps. Tests that
+ * run under this polyfill only prove callers use the streaming API *shape*
+ * (`Blob.stream()` → `ReadableStream`) — they are not evidence that the
+ * pipeline never buffers a whole file in memory. That guarantee is
+ * architectural: `ThemeLoader`'s hot path (`handleFileChange` /
+ * `handleFetchUrl`) never calls `.arrayBuffer()` on the file or response, and
+ * `loadArchive`/`untarStream` in `archive.ts` stream tar entries rather than
+ * materialising the whole archive. Verify no-buffering by reading that code
+ * path, not by trusting a green run of tests that use this polyfill.
  */
 export function installBlobStream(): void {
   if (typeof Blob.prototype.stream === 'function') return;
