@@ -64,19 +64,27 @@ async function peek(
   const reader = stream.getReader();
   const parts: Uint8Array[] = [];
   let total = 0;
-  while (total < n) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value);
-    total += value.byteLength;
+  // `finally`, not a trailing call: a read can reject mid-loop (a dropped connection on a
+  // 642MB download is the realistic case). Leaving the lock held would strand the stream —
+  // nothing else could read it and nothing could cancel it, so an abandoned fetch would go
+  // on pulling bytes for as long as the tab lived.
+  try {
+    while (total < n) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
   }
+
   const head = new Uint8Array(total);
   let offset = 0;
   for (const part of parts) {
     head.set(part, offset);
     offset += part.byteLength;
   }
-  reader.releaseLock();
   return { head, rest: prepend(head, stream) };
 }
 

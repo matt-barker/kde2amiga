@@ -186,6 +186,24 @@ it('reads a real .tar.xz archive and keeps only wanted files', async () => {
   expect(zip.file('theme/LICENSE')).toBeNull();
 });
 
+it('releases the reader lock when the source stream fails mid-sniff', async () => {
+  // A dropped connection partway through a 642MB download is the realistic case: the
+  // first chunk arrives, then the read rejects. Leaving the lock held would strand the
+  // stream — nothing else can read it, and nothing can cancel it either, so an abandoned
+  // fetch would go on pulling bytes.
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([0x1f])); // one byte, short of the 6-byte sniff
+    },
+    pull() {
+      throw new Error('connection dropped');
+    },
+  });
+
+  await expect(loadArchive(stream)).rejects.toThrow('connection dropped');
+  expect(stream.locked).toBe(false);
+});
+
 it('still rejects an archive with no recognised magic', async () => {
   await expect(loadArchive(new Uint8Array([1, 2, 3, 4, 5, 6]))).rejects.toThrow(
     'Unrecognised archive format',

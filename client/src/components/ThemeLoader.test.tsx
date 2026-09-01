@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { gzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { ThemeLoader } from './ThemeLoader';
 
@@ -71,6 +73,20 @@ function makeThemeTarGzFile(): File {
   return new File([gz], 'theme.tar.gz', { type: 'application/gzip' });
 }
 
+const moduleUrl = import.meta.url;
+
+/**
+ * The same .tar.xz fixture archive.test.ts decodes directly. Built by `tar -cJf`, so the
+ * xz container, filters and block layout are a real encoder's, not a hand-rolled one's.
+ */
+function makeThemeTarXzFile(): File {
+  // Held in a variable rather than written inline: Vite rewrites a literal
+  // `new URL(..., import.meta.url)` into an asset URL, which is not a file: URL and so
+  // cannot be handed to fileURLToPath. archive.test.ts sidesteps it the same way.
+  const path = fileURLToPath(new URL('../lib/theme/__fixtures__/sample-theme.tar.xz', moduleUrl));
+  return new File([readFileSync(path)], 'theme.tar.xz', { type: 'application/x-xz' });
+}
+
 describe('ThemeLoader', () => {
   it('parses an uploaded zip and reports the discovered icons', async () => {
     const onThemeLoaded = vi.fn();
@@ -110,6 +126,25 @@ describe('ThemeLoader', () => {
     const [, icons] = onThemeLoaded.mock.calls[0];
     expect(icons).toHaveLength(1);
     expect(icons[0].name).toBe('folder');
+  });
+
+  // The .tar.xz path had only ever been exercised by calling loadArchive() with a whole
+  // Uint8Array; nothing covered it through the component's actual upload path. Note that
+  // the jsdom Blob.stream() polyfill (see test/installBlobStream.ts) emits the file as a
+  // single chunk, so this proves the wiring — file input -> Blob.stream() -> xz decode ->
+  // untar -> parseTheme — rather than proving incremental chunk handling.
+  it('parses an uploaded tar.xz and reports the discovered icons', async () => {
+    const onThemeLoaded = vi.fn();
+    render(<ThemeLoader onThemeLoaded={onThemeLoaded} />);
+
+    const file = makeThemeTarXzFile();
+    const input = screen.getByLabelText(/upload/i);
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(onThemeLoaded).toHaveBeenCalledTimes(1));
+    const [, icons] = onThemeLoaded.mock.calls[0];
+    expect(icons).toHaveLength(1);
+    expect(icons[0].name).toBe('sample');
   });
 
   it('fetches a theme from a URL and reports the discovered icons', async () => {
