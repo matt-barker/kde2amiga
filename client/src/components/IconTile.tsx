@@ -10,6 +10,8 @@ const MIME: Record<IconVariant['format'], string> = {
   png: 'image/png',
 };
 
+type Loaded = { zipPath: string; status: 'ok'; src: string } | { zipPath: string; status: 'error' };
+
 export function IconTile(props: {
   zip: JSZip;
   variant: IconVariant;
@@ -17,23 +19,38 @@ export function IconTile(props: {
   onToggle: (zipPath: string) => void;
 }) {
   const { zip, variant, checked, onToggle } = props;
-  const [src, setSrc] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
 
-  // The object URL is created on mount and revoked on unmount, so only tiles the
-  // virtualizer is actually showing hold one. Materialising all 272k at once would
-  // exhaust the tab.
+  // JSZip's `file()` lookup is synchronous (it's an in-memory index, not I/O), so a
+  // missing entry is known immediately during render — no need to round-trip it
+  // through an effect and state just to report "not found".
+  const file = zip.file(variant.zipPath);
+
+  // The object URL is created on mount and revoked on unmount or variant change, so
+  // only tiles the virtualizer is actually showing hold one. Materialising all 272k
+  // at once would exhaust the tab.
   useEffect(() => {
+    // Looked up again here (rather than closing over the `file` computed above) so
+    // this effect's only real dependencies are `zip` and `variant.zipPath` — both
+    // already listed below.
+    const entry = zip.file(variant.zipPath);
+    if (!entry) return;
+
     let url: string | null = null;
     let cancelled = false;
 
-    const file = zip.file(variant.zipPath);
-    if (file) {
-      file.async('blob').then((blob) => {
+    entry
+      .async('blob')
+      .then((blob) => {
         if (cancelled) return;
         url = URL.createObjectURL(blob.slice(0, blob.size, MIME[variant.format]));
-        setSrc(url);
+        setLoaded({ zipPath: variant.zipPath, status: 'ok', src: url });
+      })
+      .catch(() => {
+        // Corrupted entry / decompression failure — plausible at 272k-file scale.
+        // Surface it instead of leaving an unhandled rejection and a blank tile.
+        if (!cancelled) setLoaded({ zipPath: variant.zipPath, status: 'error' });
       });
-    }
 
     return () => {
       cancelled = true;
@@ -41,11 +58,33 @@ export function IconTile(props: {
     };
   }, [zip, variant.zipPath, variant.format]);
 
+  // A `loaded` result only applies to the variant it was fetched for. Once the variant
+  // prop changes, any previous result — from the icon just swapped away from — falls
+  // through to the loading state below rather than requiring a synchronous setState
+  // reset inside the effect above.
+  const state: Loaded | { status: 'loading' } = !file
+    ? { zipPath: variant.zipPath, status: 'error' }
+    : loaded && loaded.zipPath === variant.zipPath
+      ? loaded
+      : { status: 'loading' };
+
   return (
     <label>
       <input type="checkbox" checked={checked} onChange={() => onToggle(variant.zipPath)} />
       <span style={{ backgroundColor: WORKBENCH_GREY, display: 'inline-block', padding: 4 }}>
-        {src && <img src={src} alt={variant.name} width={48} height={48} loading="lazy" />}
+        {state.status === 'ok' && (
+          <img
+            src={state.src}
+            alt={variant.name}
+            width={48}
+            height={48}
+            loading="lazy"
+            onError={() => setLoaded({ zipPath: variant.zipPath, status: 'error' })}
+          />
+        )}
+        {state.status === 'error' && (
+          <span role="alert">{`${variant.name} failed to load`}</span>
+        )}
       </span>
       <small>{`${variant.category} ${variant.sizePx}`}</small>
     </label>
