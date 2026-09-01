@@ -36,3 +36,27 @@ describe('decodePng', () => {
     expect(image.height).toBe(8);
   });
 });
+
+describe('rasterizeSvg viewport handling', () => {
+  it('scales a width/height-only SVG down instead of cropping it', async () => {
+    // Slot-Symbolic-Dark's utilities-tweak-tool is 64 user units with no viewBox
+    // (enjoy-music-player is 62); every Papirus icon is shaped this way too.
+    // Shrinking the viewport on such a file moves the clip rectangle without
+    // remapping user units, so the drawing keeps its original scale and only its
+    // top-left corner survives — at the default 32px output, exactly a quarter of
+    // the icon. The blue square sits in the bottom-right quadrant of the 64-unit
+    // canvas, so it disappears entirely under the bug.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+      <rect x="0" y="0" width="32" height="32" fill="#ff0000"/>
+      <rect x="32" y="32" width="32" height="32" fill="#0000ff"/>
+    </svg>`;
+    const image = await rasterizeSvg(svg, 32);
+
+    const at = (x: number, y: number) => {
+      const i = (y * 32 + x) * 4;
+      return [image.data[i], image.data[i + 1], image.data[i + 2], image.data[i + 3]];
+    };
+    expect(at(8, 8)).toEqual([255, 0, 0, 255]); // top-left stays red
+    expect(at(24, 24)).toEqual([0, 0, 255, 255]); // bottom-right must still be blue
+  });
+});

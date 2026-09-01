@@ -64,3 +64,46 @@ describe('mapImageToPalette', () => {
     expect(mapImageToPalette(image, palette)).toEqual([1]);
   });
 });
+
+describe('faint pixels', () => {
+  // The Amiga has no partial alpha: an icon pixel is either drawn or it is not.
+  // Treating every alpha > 0 as fully drawn is what turned the soft drop shadows
+  // and anti-aliased skirts that modern themes rely on into solid paint — in
+  // Slot-Symbolic-Dark's utilities-tweak-tool, 41% of pixels at 32px sit in the
+  // alpha 1-127 band, so nearly half the icon rendered at full strength as a grey
+  // haze that merged into the Workbench background.
+  function pixelImage(pixels: [number, number, number, number][]): RgbaImage {
+    const data = new Uint8ClampedArray(pixels.length * 4);
+    pixels.forEach((p, i) => data.set(p, i * 4));
+    return { width: pixels.length, height: 1, data };
+  }
+
+  it('maps a barely-there pixel to transparent rather than to full-strength paint', () => {
+    const image = pixelImage([
+      [255, 0, 0, 255], // solid red
+      [0, 0, 255, 40], // a faint shadow skirt, ~16% opacity
+    ]);
+    const palette = buildSharedPalette([image], 8);
+    expect(mapImageToPalette(image, palette)[1]).toBe(0);
+  });
+
+  it('keeps a mostly-opaque edge pixel', () => {
+    const image = pixelImage([[255, 0, 0, 255], [0, 0, 255, 200]]);
+    const palette = buildSharedPalette([image], 8);
+    expect(mapImageToPalette(image, palette)[1]).not.toBe(0);
+  });
+
+  it('spends no palette slots on colours only faint pixels use', () => {
+    // Every visible pixel is red; the blues exist only as a faint shadow. A
+    // palette that lists blue has spent scarce Amiga colours on pixels that
+    // will not be drawn.
+    const image = pixelImage([
+      [255, 0, 0, 255],
+      [0, 0, 255, 30],
+      [0, 0, 200, 20],
+      [0, 0, 160, 10],
+    ]);
+    const palette = buildSharedPalette([image], 8);
+    for (const [, , blue] of palette.slice(1)) expect(blue).toBeLessThan(128);
+  });
+});

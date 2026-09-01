@@ -8,11 +8,32 @@ export interface RgbaImage {
 
 type Rgb = [number, number, number];
 
+/**
+ * Alpha at or above which a source pixel is drawn at all.
+ *
+ * NewIcons has no partial alpha — index 0 is transparent and every other index is
+ * paint at full strength — so each source pixel has to be resolved to drawn or not
+ * drawn. The old rule, "anything above zero is drawn", made that decision the most
+ * damaging way available: modern themes lean on wide, very faint drop shadows and
+ * anti-aliased skirts, and those came through as solid paint. Measured at 32px on
+ * Slot-Symbolic-Dark, the share of pixels in the 1-127 band runs from 6%
+ * (preferences-desktop-gaming) to 41% (utilities-tweak-tool) — a haze that
+ * swallowed each artwork's silhouette against the Workbench's grey. It also cost
+ * real colours: those pixels fed the median cut, so the palette spent slots on
+ * shades nothing visible used.
+ *
+ * Half opacity is the conventional cut for flattening to 1-bit alpha: it keeps
+ * anti-aliased edges, which cluster high, and drops shadows, which cluster low.
+ * With it, only 8 of preferences-desktop-gaming's 561 drawn pixels land within
+ * distance 40 of Workbench grey (#ABABAB) — the icon reads as artwork again.
+ */
+export const MIN_DRAWN_ALPHA = 128;
+
 function collectOpaquePixels(images: RgbaImage[]): Rgb[] {
   const pixels: Rgb[] = [];
   for (const image of images) {
     for (let i = 0; i < image.data.length; i += 4) {
-      if (image.data[i + 3] > 0) {
+      if (image.data[i + 3] >= MIN_DRAWN_ALPHA) {
         pixels.push([image.data[i], image.data[i + 1], image.data[i + 2]]);
       }
     }
@@ -86,7 +107,7 @@ function colorDistance(a: Rgb, b: Rgb): number {
 export function mapImageToPalette(image: RgbaImage, palette: Rgb[]): number[] {
   const indices: number[] = [];
   for (let i = 0; i < image.data.length; i += 4) {
-    if (image.data[i + 3] === 0) {
+    if (image.data[i + 3] < MIN_DRAWN_ALPHA) {
       indices.push(0);
       continue;
     }
