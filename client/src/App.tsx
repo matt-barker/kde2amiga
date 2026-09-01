@@ -53,10 +53,11 @@ export default function App() {
     <div>
       <h1>kde2amiga</h1>
       <ThemeLoader onThemeLoaded={handleThemeLoaded} />
-      {groups.length > 0 && (
+      {zip && groups.length > 0 && (
         <>
           <IconGallery
-            icons={groups.flatMap((g) => g.variants)}
+            zip={zip}
+            groups={groups}
             selected={selected}
             onSelectionChange={setSelected}
           />

@@ -25,9 +25,9 @@ describe('App end-to-end', () => {
 
     const file = await makeThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByLabelText(/folder \(places\)/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
     await waitFor(() => expect(screen.getByRole('link', { name: /download/i })).toBeInTheDocument(), {
@@ -42,9 +42,9 @@ describe('App end-to-end', () => {
 
     const file = await makeThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByLabelText(/folder \(places\)/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());

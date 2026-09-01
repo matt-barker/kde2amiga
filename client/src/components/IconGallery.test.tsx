@@ -1,37 +1,81 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import JSZip from 'jszip';
 import { IconGallery } from './IconGallery';
-import type { IconVariant } from '../lib/theme/themeParser';
+import type { IconGroup } from '../lib/theme/themeParser';
 
-const icons: IconVariant[] = [
-  { name: 'folder', category: 'places', sizePx: 0, format: 'svg', zipPath: 'scalable/places/folder.svg' },
-  { name: 'firefox', category: 'apps', sizePx: 0, format: 'svg', zipPath: 'scalable/apps/firefox.svg' },
-];
+function groups(): IconGroup[] {
+  return [
+    {
+      name: 'folder-wine',
+      variants: [
+        { name: 'folder-wine', category: 'apps', sizePx: 48, format: 'svg', zipPath: 'a/apps/48/folder-wine.svg' },
+        { name: 'folder-wine', category: 'places', sizePx: 22, format: 'svg', zipPath: 'a/places/22/folder-wine.svg' },
+      ],
+    },
+    {
+      name: 'network',
+      variants: [
+        { name: 'network', category: 'apps', sizePx: 48, format: 'svg', zipPath: 'a/apps/48/network.svg' },
+      ],
+    },
+  ];
+}
+
+function zipFor(gs: IconGroup[]): JSZip {
+  const zip = new JSZip();
+  for (const g of gs) for (const v of g.variants) zip.file(v.zipPath, '<svg/>');
+  return zip;
+}
+
+afterEach(cleanup);
 
 describe('IconGallery', () => {
-  it('renders one checkbox per icon, labeled with name and category', () => {
-    render(<IconGallery icons={icons} selected={new Set()} onSelectionChange={vi.fn()} />);
-    expect(screen.getByLabelText(/folder \(places\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/firefox \(apps\)/i)).toBeInTheDocument();
+  it('shows every variant of a name together on one row', () => {
+    const gs = groups();
+    render(<IconGallery zip={zipFor(gs)} groups={gs} selected={new Set()} onSelectionChange={() => {}} />);
+
+    expect(screen.getByText('folder-wine')).toBeInTheDocument();
+    // Both variants of the name are offered side by side, so the colour one is choosable.
+    // Scoped to the folder-wine row: the fixture's `network` group also has an
+    // "apps 48" variant, and both groups mount (the viewport window comfortably
+    // fits both), so an unscoped query would be ambiguous.
+    const row = screen.getByText('folder-wine').closest('div')!;
+    expect(within(row).getByText('apps 48')).toBeInTheDocument();
+    expect(within(row).getByText('places 22')).toBeInTheDocument();
   });
 
-  it('calls onSelectionChange with the toggled icon added to the selection', () => {
-    const onSelectionChange = vi.fn();
-    render(<IconGallery icons={icons} selected={new Set()} onSelectionChange={onSelectionChange} />);
-    fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
-    expect(onSelectionChange).toHaveBeenCalledWith(new Set(['scalable/places/folder.svg']));
+  it('filters groups by name as you search', () => {
+    const gs = groups();
+    render(<IconGallery zip={zipFor(gs)} groups={gs} selected={new Set()} onSelectionChange={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'network' } });
+
+    expect(screen.getByText('network')).toBeInTheDocument();
+    expect(screen.queryByText('folder-wine')).not.toBeInTheDocument();
   });
 
-  it('calls onSelectionChange with the icon removed when unchecking an already-selected icon', () => {
+  it('selects an individual variant by zipPath', () => {
+    const gs = groups();
     const onSelectionChange = vi.fn();
-    render(
-      <IconGallery
-        icons={icons}
-        selected={new Set(['scalable/places/folder.svg'])}
-        onSelectionChange={onSelectionChange}
-      />,
-    );
-    fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
-    expect(onSelectionChange).toHaveBeenCalledWith(new Set());
+    render(<IconGallery zip={zipFor(gs)} groups={gs} selected={new Set()} onSelectionChange={onSelectionChange} />);
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set(['a/apps/48/folder-wine.svg']));
+  });
+
+  it('mounts only the visible window of a large theme', () => {
+    const many: IconGroup[] = Array.from({ length: 5000 }, (_, i) => ({
+      name: `icon-${i}`,
+      variants: [
+        { name: `icon-${i}`, category: 'apps', sizePx: 48, format: 'svg', zipPath: `a/apps/48/icon-${i}.svg` },
+      ],
+    }));
+
+    render(<IconGallery zip={zipFor(many.slice(0, 1))} groups={many} selected={new Set()} onSelectionChange={() => {}} />);
+
+    // Virtualized: far fewer rows in the DOM than groups in the theme.
+    expect(screen.getAllByRole('checkbox').length).toBeLessThan(200);
   });
 });

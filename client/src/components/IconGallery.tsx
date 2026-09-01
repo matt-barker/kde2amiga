@@ -1,41 +1,88 @@
-import type { IconVariant } from '../lib/theme/themeParser';
+import { useMemo, useState } from 'react';
+import type JSZip from 'jszip';
+import type { IconGroup } from '../lib/theme/themeParser';
+import { IconTile } from './IconTile';
 
-// Keyed by zipPath, not category/name: a group can now hold several variants
-// that share a name and category (different sizes), so only the zip path is
-// guaranteed unique per variant.
-function keyOf(icon: IconVariant): string {
-  return icon.zipPath;
-}
+const ROW_HEIGHT = 96;
+const VIEWPORT_HEIGHT = 600;
+const OVERSCAN = 4;
 
 export function IconGallery(props: {
-  icons: IconVariant[];
+  zip: JSZip;
+  groups: IconGroup[];
   selected: Set<string>;
   onSelectionChange: (selected: Set<string>) => void;
 }) {
-  function toggle(key: string) {
-    const next = new Set(props.selected);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    props.onSelectionChange(next);
+  const { zip, groups, selected, onSelectionChange } = props;
+  const [query, setQuery] = useState('');
+  const [scrollTop, setScrollTop] = useState(0);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups.filter((group) => group.name.toLowerCase().includes(needle));
+  }, [groups, query]);
+
+  // Hand-rolled fixed-height windowing. A theme can hold hundreds of thousands of
+  // groups; mounting them all would lock the tab, and each mounted tile also holds
+  // an object URL.
+  //
+  // `first` is clamped to `matches.length - visibleCount` (never below 0). Without
+  // that upper clamp, scrolling deep into an unfiltered list and then narrowing the
+  // search would leave `first` pointing past the end of the now-shorter `matches`
+  // array — `scrollTop` is DOM state the filter doesn't reset, so the window would
+  // go blank instead of showing the filtered results.
+  const visibleCount = Math.ceil(VIEWPORT_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2;
+  const maxFirst = Math.max(0, matches.length - visibleCount);
+  const first = Math.max(0, Math.min(Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN, maxFirst));
+  const visible = matches.slice(first, first + visibleCount);
+
+  function toggle(zipPath: string) {
+    const next = new Set(selected);
+    if (next.has(zipPath)) next.delete(zipPath);
+    else next.add(zipPath);
+    onSelectionChange(next);
   }
 
   return (
-    <ul>
-      {props.icons.map((icon) => {
-        const key = keyOf(icon);
-        const inputId = `icon-${key}`;
-        return (
-          <li key={key}>
-            <input
-              id={inputId}
-              type="checkbox"
-              checked={props.selected.has(key)}
-              onChange={() => toggle(key)}
-            />
-            <label htmlFor={inputId}>{`${icon.name} (${icon.category})`}</label>
-          </li>
-        );
-      })}
-    </ul>
+    <div>
+      <label htmlFor="icon-search">Search icons</label>
+      <input
+        id="icon-search"
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <p>{`${matches.length} of ${groups.length} icons`}</p>
+
+      <div
+        style={{ height: VIEWPORT_HEIGHT, overflowY: 'auto' }}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <div style={{ height: matches.length * ROW_HEIGHT, position: 'relative' }}>
+          {visible.map((group, index) => (
+            <div
+              key={group.name}
+              style={{
+                position: 'absolute',
+                top: (first + index) * ROW_HEIGHT,
+                height: ROW_HEIGHT,
+              }}
+            >
+              <strong>{group.name}</strong>
+              {group.variants.map((variant) => (
+                <IconTile
+                  key={variant.zipPath}
+                  zip={zip}
+                  variant={variant}
+                  checked={selected.has(variant.zipPath)}
+                  onToggle={toggle}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
