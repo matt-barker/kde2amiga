@@ -1,5 +1,5 @@
 import type JSZip from 'jszip';
-import type { ThemeIcon } from '../theme/themeParser';
+import type { IconVariant } from '../theme/themeParser';
 import { rasterizeSvg, decodePng } from '../image/decode';
 import { compositeBadge, type BadgeOptions } from '../badges/compositeBadge';
 import { buildSharedPalette, mapImageToPalette, type RgbaImage } from '../image/quantize';
@@ -8,7 +8,7 @@ import { buildInfoFile, type IconKind } from '../newicons/diskObject';
 import { buildOutputZip, type ConvertedIcon } from '../output/zipBuilder';
 
 export interface JobIconInput {
-  icon: ThemeIcon;
+  icon: IconVariant;
   kind: IconKind;
   role?: ConvertedIcon['role'];
   badge?: BadgeOptions;
@@ -21,7 +21,7 @@ export interface JobConfig {
   tintColor?: [number, number, number];
 }
 
-async function decodeThemeIcon(zip: JSZip, icon: ThemeIcon, outputSizePx: number): Promise<RgbaImage> {
+async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
   const file = zip.file(icon.zipPath);
   if (!file) throw new Error(`Icon file missing from zip: ${icon.zipPath}`);
 

@@ -1,11 +1,14 @@
-import type { ThemeIcon } from '../lib/theme/themeParser';
+import type { IconVariant } from '../lib/theme/themeParser';
 
-function keyOf(icon: ThemeIcon): string {
-  return `${icon.category}/${icon.name}`;
+// Keyed by zipPath, not category/name: a group can now hold several variants
+// that share a name and category (different sizes), so only the zip path is
+// guaranteed unique per variant.
+function keyOf(icon: IconVariant): string {
+  return icon.zipPath;
 }
 
 export function IconGallery(props: {
-  icons: ThemeIcon[];
+  icons: IconVariant[];
   selected: Set<string>;
   onSelectionChange: (selected: Set<string>) => void;
 }) {

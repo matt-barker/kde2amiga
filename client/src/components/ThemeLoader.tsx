@@ -1,22 +1,22 @@
 import { useState, type ChangeEvent } from 'react';
 import type JSZip from 'jszip';
 import { loadArchive, type ArchiveSource } from '../lib/theme/archive';
-import { parseTheme, type ThemeIcon } from '../lib/theme/themeParser';
+import { parseTheme, type IconGroup } from '../lib/theme/themeParser';
 
-export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, icons: ThemeIcon[]) => void }) {
+export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGroup[]) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState('');
 
   async function loadFromArchive(source: ArchiveSource) {
     try {
       const zip = await loadArchive(source);
-      const icons = await parseTheme(zip);
-      if (icons.length === 0) {
+      const groups = await parseTheme(zip);
+      if (groups.length === 0) {
         setError('No KDE-theme-shaped icons were found in this archive.');
         return;
       }
       setError(null);
-      props.onThemeLoaded(zip, icons);
+      props.onThemeLoaded(zip, groups);
     } catch (err) {
       console.error('Failed to read theme archive:', err);
       setError('That file could not be read as a zip, tar.gz or tar.xz archive.');

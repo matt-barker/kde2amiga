@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { IconGallery } from './IconGallery';
-import type { ThemeIcon } from '../lib/theme/themeParser';
+import type { IconVariant } from '../lib/theme/themeParser';
 
-const icons: ThemeIcon[] = [
+const icons: IconVariant[] = [
   { name: 'folder', category: 'places', sizePx: 0, format: 'svg', zipPath: 'scalable/places/folder.svg' },
   { name: 'firefox', category: 'apps', sizePx: 0, format: 'svg', zipPath: 'scalable/apps/firefox.svg' },
 ];
@@ -19,13 +19,17 @@ describe('IconGallery', () => {
     const onSelectionChange = vi.fn();
     render(<IconGallery icons={icons} selected={new Set()} onSelectionChange={onSelectionChange} />);
     fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
-    expect(onSelectionChange).toHaveBeenCalledWith(new Set(['places/folder']));
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set(['scalable/places/folder.svg']));
   });
 
   it('calls onSelectionChange with the icon removed when unchecking an already-selected icon', () => {
     const onSelectionChange = vi.fn();
     render(
-      <IconGallery icons={icons} selected={new Set(['places/folder'])} onSelectionChange={onSelectionChange} />,
+      <IconGallery
+        icons={icons}
+        selected={new Set(['scalable/places/folder.svg'])}
+        onSelectionChange={onSelectionChange}
+      />,
     );
     fireEvent.click(screen.getByLabelText(/folder \(places\)/i));
     expect(onSelectionChange).toHaveBeenCalledWith(new Set());

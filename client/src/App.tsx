@@ -3,14 +3,14 @@ import type JSZip from 'jszip';
 import { ThemeLoader } from './components/ThemeLoader';
 import { IconGallery } from './components/IconGallery';
 import { JobConfigForm } from './components/JobConfigForm';
-import type { ThemeIcon } from './lib/theme/themeParser';
+import type { IconGroup } from './lib/theme/themeParser';
 import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
 
 const DEFAULT_CONFIG: JobConfig = { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' };
 
 export default function App() {
   const [zip, setZip] = useState<JSZip | null>(null);
-  const [icons, setIcons] = useState<ThemeIcon[]>([]);
+  const [groups, setGroups] = useState<IconGroup[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [config, setConfig] = useState<JobConfig>(DEFAULT_CONFIG);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -18,9 +18,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  function handleThemeLoaded(loadedZip: JSZip, loadedIcons: ThemeIcon[]) {
+  function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
     setZip(loadedZip);
-    setIcons(loadedIcons);
+    setGroups(loadedGroups);
     setSelected(new Set());
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setDownloadUrl(null);
@@ -33,8 +33,9 @@ export default function App() {
     setError(null);
     setProgress({ done: 0, total: 0 });
     try {
-      const inputs: JobIconInput[] = icons
-        .filter((icon) => selected.has(`${icon.category}/${icon.name}`))
+      const inputs: JobIconInput[] = groups
+        .flatMap((g) => g.variants)
+        .filter((icon) => selected.has(icon.zipPath))
         .map((icon) => ({ icon, kind: 'project' as const }));
 
       const blob = await runConversionJob(zip, inputs, config, (done, total) => setProgress({ done, total }));
@@ -52,9 +53,13 @@ export default function App() {
     <div>
       <h1>kde2amiga</h1>
       <ThemeLoader onThemeLoaded={handleThemeLoaded} />
-      {icons.length > 0 && (
+      {groups.length > 0 && (
         <>
-          <IconGallery icons={icons} selected={selected} onSelectionChange={setSelected} />
+          <IconGallery
+            icons={groups.flatMap((g) => g.variants)}
+            selected={selected}
+            onSelectionChange={setSelected}
+          />
           <JobConfigForm config={config} onChange={setConfig} />
           <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
             {converting ? 'Converting…' : 'Convert'}

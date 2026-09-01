@@ -1,11 +1,16 @@
 import type JSZip from 'jszip';
 
-export interface ThemeIcon {
+export interface IconVariant {
   name: string;
   category: string;
   sizePx: number;
   format: 'svg' | 'png';
   zipPath: string;
+}
+
+export interface IconGroup {
+  name: string;
+  variants: IconVariant[];
 }
 
 type Marker = { kind: 'scalable' } | { kind: 'sized'; sizePx: number };
@@ -34,7 +39,7 @@ function locateMarker(dirSegments: string[]): { index: number; marker: Marker } 
 }
 
 /**
- * Parses one zip entry path into a ThemeIcon, if it matches the recognised
+ * Parses one zip entry path into an IconVariant, if it matches the recognised
  * KDE icon-theme layout. Tolerates any number of leading wrapper directories
  * (a GitHub tarball's repo-name prefix, a theme-name directory inside it,
  * "breeze/", etc.) by locating the rightmost size/scalable marker segment
@@ -48,7 +53,7 @@ function locateMarker(dirSegments: string[]): { index: number; marker: Marker } 
  *  - "scalable/..." follows the same two shapes, and only ever matches
  *    ".svg" files.
  */
-function parseIconPath(relativePath: string): ThemeIcon | null {
+function parseIconPath(relativePath: string): IconVariant | null {
   const segments = relativePath.split('/').filter(Boolean);
   if (segments.length < 2) return null;
 
@@ -87,24 +92,42 @@ function parseIconPath(relativePath: string): ThemeIcon | null {
   };
 }
 
-function shouldReplace(existing: ThemeIcon | undefined, candidate: ThemeIcon): boolean {
-  if (!existing) return true;
-  if (existing.format === 'svg') return false; // scalable already wins, never displaced
-  if (candidate.format === 'svg') return true; // scalable beats any raster
-  return candidate.sizePx > existing.sizePx; // among rasters, prefer the larger source
+/**
+ * Ranks a variant for display. Scalable SVG first, then larger SVG, then larger raster.
+ *
+ * This replaces the old `shouldReplace`, which used the same preference to *discard*
+ * every other variant. Discarding is what hid the fact that `folder-wine` ships as a
+ * full-colour icon under apps/ and a near-white symbolic glyph under places/ — the
+ * user could only ever see whichever the zip happened to yield first.
+ */
+function variantRank(variant: IconVariant): [number, number] {
+  const formatRank = variant.format === 'svg' ? 0 : 1;
+  const size = variant.sizePx === 0 ? Number.POSITIVE_INFINITY : variant.sizePx;
+  return [formatRank, -size];
 }
 
-export async function parseTheme(zip: JSZip): Promise<ThemeIcon[]> {
-  const byKey = new Map<string, ThemeIcon>();
+export async function parseTheme(zip: JSZip): Promise<IconGroup[]> {
+  const byName = new Map<string, IconGroup>();
 
   zip.forEach((relativePath) => {
-    const icon = parseIconPath(relativePath);
-    if (!icon) return;
+    const variant = parseIconPath(relativePath);
+    if (!variant) return;
 
-    const key = `${icon.category}/${icon.name}`;
-    const existing = byKey.get(key);
-    if (shouldReplace(existing, icon)) byKey.set(key, icon);
+    let group = byName.get(variant.name);
+    if (!group) {
+      group = { name: variant.name, variants: [] };
+      byName.set(variant.name, group);
+    }
+    group.variants.push(variant);
   });
 
-  return Array.from(byKey.values());
+  for (const group of byName.values()) {
+    group.variants.sort((a, b) => {
+      const [af, as] = variantRank(a);
+      const [bf, bs] = variantRank(b);
+      return af - bf || as - bs;
+    });
+  }
+
+  return Array.from(byName.values());
 }

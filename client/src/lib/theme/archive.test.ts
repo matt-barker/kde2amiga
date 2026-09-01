@@ -112,9 +112,9 @@ describe('loadArchive', () => {
     const bytes = await zip.generateAsync({ type: 'uint8array' });
 
     const loaded = await loadArchive(bytes);
-    const icons = await parseTheme(loaded);
-    expect(icons).toHaveLength(1);
-    expect(icons[0].name).toBe('folder');
+    const groups = await parseTheme(loaded);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('folder');
   });
 
   it('loads a gzipped tarball, expanding it into an equivalent JSZip', async () => {
@@ -132,12 +132,12 @@ describe('loadArchive', () => {
     // The directory entry must not have produced a JSZip file entry.
     expect(loaded.file('Papirus-master/Papirus/scalable/')).toBeNull();
 
-    const icons = await parseTheme(loaded);
-    const byName = Object.fromEntries(icons.map((i) => [i.name, i]));
+    const groups = await parseTheme(loaded);
+    const byName = Object.fromEntries(groups.map((g) => [g.name, g]));
     expect(Object.keys(byName).sort()).toEqual(['firefox', 'folder', 'x-office-document']);
-    expect(byName.folder.format).toBe('svg');
-    expect(byName.firefox).toMatchObject({ format: 'png', sizePx: 48 });
-    expect(byName['x-office-document']).toMatchObject({ format: 'png', sizePx: 48 });
+    expect(byName.folder.variants[0].format).toBe('svg');
+    expect(byName.firefox.variants[0]).toMatchObject({ format: 'png', sizePx: 48 });
+    expect(byName['x-office-document'].variants[0]).toMatchObject({ format: 'png', sizePx: 48 });
   });
 
   it('throws a clear error for a buffer that is neither zip nor gzip', async () => {
