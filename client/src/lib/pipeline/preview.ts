@@ -1,7 +1,7 @@
 import type JSZip from 'jszip';
 import type { IconVariant } from '../theme/themeParser';
 import type { RgbaImage } from '../image/quantize';
-import { decodeThemeIcon, prepareIcon, type JobConfig } from './convertJob';
+import { decodeThemeIcon, glowMarginPx, prepareIcon, type JobConfig } from './convertJob';
 
 export interface IconPreview {
   zipPath: string;
@@ -82,7 +82,10 @@ export async function buildPreviews(
   for (const [index, variant] of variants.entries()) {
     if (index > 0 && index % YIELD_EVERY === 0) await yieldToEventLoop();
     try {
-      decoded.push({ variant, image: await decodeThemeIcon(zip, variant, config.outputSizePx) });
+      decoded.push({
+        variant,
+        image: await decodeThemeIcon(zip, variant, config.outputSizePx, glowMarginPx(config)),
+      });
     } catch (error) {
       console.warn(`Skipping preview for "${variant.name}": ${(error as Error).message}`);
     }

@@ -5,7 +5,12 @@ import { compositeBadge, type BadgeOptions } from '../badges/compositeBadge';
 import { buildSharedPalette, mapImageToPalette, type RgbaImage } from '../image/quantize';
 import { maxColorsForSingleLine } from '../newicons/paletteLimits';
 import { flattenOntoBackground } from '../image/flatten';
-import { applySelectedStateEffect, type SelectedStateEffect } from '../image/selectedState';
+import {
+  applySelectedStateEffect,
+  glowRadiusFor,
+  glowRamp,
+  type SelectedStateEffect,
+} from '../image/selectedState';
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
 import { buildOutputZip, type ConvertedIcon } from '../output/zipBuilder';
 
@@ -35,24 +40,65 @@ export interface JobConfig {
   /**
    * The colour the `glowSurround` selected state draws its halo in.
    *
-   * Undefined keeps the original behaviour — the brightest entry the icon's own palette
-   * happens to hold, which is near enough white for most artwork and was the only glow
-   * available before this was configurable. Setting it costs one palette slot, because a
-   * colour the icon does not contain cannot otherwise be drawn; see `prepareIcon`.
+   * Undefined draws GlowIcons' own ramp — white, bright yellow, pale gold — so the
+   * default matches AmigaOS. Setting it keeps the chosen colour as the middle stop and
+   * derives the other two around it. Either way the halo costs three palette slots,
+   * because colours the icon does not contain cannot otherwise be drawn; see
+   * `prepareIcon` and `glowRamp`.
    */
   glowColor?: [number, number, number];
 }
 
-export async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
+/**
+ * What a fresh conversion starts from.
+ *
+ * Lives beside `JobConfig` rather than in the component that first renders it: it is a
+ * property of the config shape, and exporting a constant from a component file is what
+ * breaks React Fast Refresh.
+ */
+export const DEFAULT_JOB_CONFIG: JobConfig = {
+  /*
+   * GlowIcons' halo was measured at 4px inside a ~46px box, and `glowRadiusFor(48)` is 4
+   * — so 48 is the size at which Glow Surround output matches AmigaOS ring for ring.
+   * Below it the ramp truncates from the outside in.
+   */
+  outputSizePx: 48,
+  maxColors: 16,
+  selectedEffect: 'invert',
+  // The standard Workbench grey. Smoothing edges against it is on by default because
+  // it is what the OS's own GlowIcons assume; it can be switched off for other backdrops.
+  backgroundColor: [0xab, 0xab, 0xab],
+};
+
+/**
+ * Clear margin to hold back from the artwork so the selected state's halo has room.
+ *
+ * Both the conversion and the preview derive their margin here rather than each working
+ * it out. They already have to agree pixel for pixel — that is what the preview/conversion
+ * identity test pins — and a margin the two computed separately is exactly the kind of
+ * step that drifts.
+ */
+export function glowMarginPx(config: JobConfig): number {
+  // Every other effect recolours pixels where they already are, so taking room from the
+  // artwork would shrink icons to no purpose.
+  return config.selectedEffect === 'glowSurround' ? glowRadiusFor(config.outputSizePx) : 0;
+}
+
+export async function decodeThemeIcon(
+  zip: JSZip,
+  icon: IconVariant,
+  outputSizePx: number,
+  insetPx = 0,
+): Promise<RgbaImage> {
   const file = zip.file(icon.zipPath);
   if (!file) throw new Error(`Icon file missing from zip: ${icon.zipPath}`);
 
   if (icon.format === 'svg') {
     const svgText = await file.async('string');
-    return rasterizeSvg(svgText, outputSizePx);
+    return rasterizeSvg(svgText, outputSizePx, insetPx);
   }
   const bytes = await file.async('uint8array');
-  return decodePng(bytes, outputSizePx);
+  return decodePng(bytes, outputSizePx, insetPx);
 }
 
 export interface PreparedIcon {
@@ -86,17 +132,17 @@ export function prepareIcon(decoded: RgbaImage, config: JobConfig): PreparedIcon
     : decoded;
 
   /*
-   * A chosen glow colour has to be *in* the palette, or it cannot be drawn at all: both
+   * The halo's colours have to be *in* the palette, or they cannot be drawn at all: both
    * states of an .info share one palette, and the median cut only ever produces colours
-   * the icon already contains — so a green halo on a red icon would snap to red. One slot
-   * is taken off the quantizer's budget and the picked colour appended verbatim, keeping
-   * the total inside the same ceiling. The cost is one colour of an already scarce 34,
-   * which is why nothing is reserved unless the glow is both selected and configured.
+   * the icon already contains — so a yellow halo on a red icon would snap to red. The
+   * ramp's three stops come off the quantizer's budget and are appended verbatim, keeping
+   * the total inside the same ceiling. Three of an already scarce 34 is a real cost, which
+   * is why nothing is reserved unless this effect is the one selected.
    */
-  const reservesGlowSlot = config.selectedEffect === 'glowSurround' && config.glowColor !== undefined;
+  const glowStops = config.selectedEffect === 'glowSurround' ? glowRamp(config.glowColor) : [];
   const cap = Math.min(config.maxColors, maxColorsForSingleLine());
-  const palette = buildSharedPalette([image], reservesGlowSlot ? Math.max(cap - 1, 1) : cap);
-  if (config.glowColor && reservesGlowSlot) palette.push(config.glowColor);
+  const palette = buildSharedPalette([image], Math.max(cap - glowStops.length, 1));
+  palette.push(...glowStops);
 
   const normal = mapImageToPalette(image, palette);
   const selected = applySelectedStateEffect(
@@ -123,7 +169,7 @@ export async function runConversionJob(
   for (const input of inputs) {
     attempted++;
     try {
-      let image = await decodeThemeIcon(zip, input.icon, config.outputSizePx);
+      let image = await decodeThemeIcon(zip, input.icon, config.outputSizePx, glowMarginPx(config));
       if (input.badge) {
         image = await compositeBadge(image, input.badge);
       }

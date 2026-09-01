@@ -6,18 +6,14 @@ import { JobConfigForm } from './components/JobConfigForm';
 import { SelectedIconList } from './components/SelectedIconList';
 import type { IconGroup, IconVariant } from './lib/theme/themeParser';
 import { defaultAssignment, type IconAssignment } from './lib/theme/assignment';
-import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
+import {
+  DEFAULT_JOB_CONFIG,
+  runConversionJob,
+  type JobConfig,
+  type JobIconInput,
+} from './lib/pipeline/convertJob';
 import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
 import './App.css';
-
-const DEFAULT_CONFIG: JobConfig = {
-  outputSizePx: 32,
-  maxColors: 16,
-  selectedEffect: 'invert',
-  // The standard Workbench grey. Smoothing edges against it is on by default because
-  // it is what the OS's own GlowIcons assume; it can be switched off for other backdrops.
-  backgroundColor: [0xab, 0xab, 0xab],
-};
 
 // A single shared instance so it doesn't cause a fresh Map identity every render.
 const EMPTY_PREVIEWS: Map<string, IconPreview> = new Map();
@@ -89,7 +85,7 @@ export default function App() {
   const [groups, setGroups] = useState<IconGroup[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignments, setAssignments] = useState<Map<string, IconAssignment>>(new Map());
-  const [config, setConfig] = useState<JobConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<JobConfig>(DEFAULT_JOB_CONFIG);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);

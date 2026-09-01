@@ -6,7 +6,8 @@ function solid(width: number, height: number, rgba: [number, number, number, num
   return { width, height, data };
 }
 import JSZip from 'jszip';
-import { runConversionJob, decodeThemeIcon, prepareIcon } from './convertJob';
+import { runConversionJob, decodeThemeIcon, prepareIcon, glowMarginPx, type JobConfig } from './convertJob';
+import { glowRadiusFor, glowRamp, GLOWICONS_RAMP } from '../image/selectedState';
 import type { IconVariant } from '../theme/themeParser';
 
 describe('runConversionJob', () => {
@@ -117,22 +118,40 @@ describe('glow surround colour', () => {
     return { width: 3, height: 3, data };
   }
 
-  it('reserves a palette slot so the chosen colour is reproduced exactly', () => {
-    // Green is nowhere in a red icon, so without a reserved slot the glow would snap to
-    // whatever red the median cut happened to produce.
-    const { palette, selected } = prepareIcon(dotOnTransparent(), {
-      outputSizePx: 3, maxColors: 8, selectedEffect: 'glowSurround', glowColor: [0, 255, 0],
+  /** One opaque pixel centred in a 48px field — the size at which the halo gets all 4 rings. */
+  function dotOnHaloSizedField() {
+    const size = 48;
+    const data = new Uint8ClampedArray(size * size * 4);
+    data.set([255, 0, 0, 255], (24 * size + 24) * 4);
+    return { width: size, height: size, data };
+  }
+
+  it('reserves a slot for every stop of the ramp so the halo is drawn exactly', () => {
+    // Green is nowhere in a red icon, and neither are the stops derived from it, so
+    // without reserved slots the halo would snap to whatever reds the median cut made.
+    const { palette, selected } = prepareIcon(dotOnHaloSizedField(), {
+      outputSizePx: 48, maxColors: 8, selectedEffect: 'glowSurround', glowColor: [0, 128, 0],
     });
-    expect(palette).toContainEqual([0, 255, 0]);
-    // The four orthogonal neighbours of the centre are the glow.
-    expect(palette[selected[1]]).toEqual([0, 255, 0]);
+    const ramp = glowRamp([0, 128, 0]);
+    for (const stop of ramp) expect(palette).toContainEqual(stop);
+    expect([1, 2, 3].map((d) => palette[selected[24 * 48 + 24 + d]])).toEqual(ramp);
+  });
+
+  it('reserves the GlowIcons ramp when no colour is chosen', () => {
+    // The default halo is GlowIcons' own white/yellow/gold, which a red icon's palette
+    // would otherwise have no way to express.
+    const { palette, selected } = prepareIcon(dotOnHaloSizedField(), {
+      outputSizePx: 48, maxColors: 8, selectedEffect: 'glowSurround',
+    });
+    for (const stop of GLOWICONS_RAMP) expect(palette).toContainEqual(stop);
+    expect([1, 2, 3].map((d) => palette[selected[24 * 48 + 24 + d]])).toEqual(GLOWICONS_RAMP);
   });
 
   it('keeps the reserved slot inside the configured colour ceiling', () => {
-    const { palette } = prepareIcon(dotOnTransparent(), {
-      outputSizePx: 3, maxColors: 4, selectedEffect: 'glowSurround', glowColor: [0, 255, 0],
+    const { palette } = prepareIcon(dotOnHaloSizedField(), {
+      outputSizePx: 48, maxColors: 6, selectedEffect: 'glowSurround', glowColor: [0, 128, 0],
     });
-    expect(palette.length).toBeLessThanOrEqual(4);
+    expect(palette.length).toBeLessThanOrEqual(6);
   });
 
   it('reserves nothing when the effect is not glow surround', () => {
@@ -140,5 +159,27 @@ describe('glow surround colour', () => {
       outputSizePx: 3, maxColors: 8, selectedEffect: 'invert', glowColor: [0, 255, 0],
     });
     expect(palette).not.toContainEqual([0, 255, 0]);
+  });
+});
+
+describe('glowMarginPx', () => {
+  const base: JobConfig = { outputSizePx: 48, maxColors: 16, selectedEffect: 'glowSurround' };
+
+  it('reserves exactly the halo it is about to draw', () => {
+    // Preview and conversion both derive their margin here. If they ever disagreed the
+    // preview would stop matching what lands on the Amiga, which is the one promise the
+    // pixel-identity test exists to keep.
+    expect(glowMarginPx(base)).toBe(glowRadiusFor(48));
+  });
+
+  it('tracks the output size', () => {
+    expect([24, 32, 48, 64].map((outputSizePx) => glowMarginPx({ ...base, outputSizePx })))
+      .toEqual([2, 3, 4, 5]);
+  });
+
+  it('reserves nothing when no halo is being drawn', () => {
+    // Every other effect recolours pixels in place, so taking room from the artwork
+    // would shrink icons for nothing.
+    expect(glowMarginPx({ ...base, selectedEffect: 'invert' })).toBe(0);
   });
 });

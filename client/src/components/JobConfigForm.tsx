@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { JobConfig } from '../lib/pipeline/convertJob';
-import type { SelectedStateEffect } from '../lib/image/selectedState';
+import { GLOWICONS_RAMP, type SelectedStateEffect } from '../lib/image/selectedState';
 import './JobConfigForm.css';
 
 /** Prose labels; the values themselves stay the identifiers the pipeline switches on. */
@@ -43,8 +43,14 @@ const MAX_OUTPUT_SIZE_PX = 222;
  */
 const WORKBENCH_GREY: [number, number, number] = [0xab, 0xab, 0xab];
 
-/** What the glow was before it was configurable: a white halo, as GlowIcons draws it. */
-const GLOW_WHITE: [number, number, number] = [0xff, 0xff, 0xff];
+/**
+ * The middle stop of GlowIcons' own ramp, and what the picker shows until one is chosen.
+ *
+ * An unset glow colour is not "no colour" — it draws GlowIcons' measured ramp, and this
+ * yellow is the ring of it the eye reads as the glow. Showing it is therefore honest
+ * about what conversion draws rather than standing in for it.
+ */
+const GLOWICONS_YELLOW = GLOWICONS_RAMP[1];
 
 const CUSTOM = 'custom';
 
@@ -186,18 +192,12 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
           id="selected-effect"
           value={config.selectedEffect}
           onChange={(e) => {
-            const selectedEffect = e.target.value as SelectedStateEffect;
-            const next: JobConfig = { ...config, selectedEffect };
             /*
-             * An unset glowColor does not mean white — it means "the brightest entry in
-             * this icon's own palette", which is where the glow came from before it was
-             * configurable. Seeding it here rather than defaulting it in the picker keeps
-             * the control honest: what it shows is what conversion draws.
+             * Deliberately seeds nothing. An unset glowColor draws GlowIcons' measured
+             * ramp; seeding this picker with that ramp's middle stop would instead derive
+             * a ramp *from* that stop — close, but no longer the thing being replicated.
              */
-            if (selectedEffect === 'glowSurround' && next.glowColor === undefined) {
-              next.glowColor = GLOW_WHITE;
-            }
-            onChange(next);
+            onChange({ ...config, selectedEffect: e.target.value as SelectedStateEffect });
           }}
         >
           {(Object.keys(EFFECT_LABELS) as SelectedStateEffect[]).map((effect) => (
@@ -214,8 +214,18 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
           <input
             id="glow-colour"
             type="color"
-            value={toHex(config.glowColor ?? GLOW_WHITE)}
-            onChange={(e) => onChange({ ...config, glowColor: fromHex(e.target.value) })}
+            value={toHex(config.glowColor ?? GLOWICONS_YELLOW)}
+            onChange={(e) => {
+              const picked = fromHex(e.target.value);
+              /*
+               * Picking the ramp's own middle stop means "the GlowIcons ramp" — the same
+               * thing an unset colour draws. Without this the exact ramp would be a
+               * one-way door: available until the picker is first touched, then never
+               * again, since any explicit colour derives its outer stops instead.
+               */
+              const isDefault = picked.every((channel, i) => channel === GLOWICONS_YELLOW[i]);
+              onChange({ ...config, glowColor: isDefault ? undefined : picked });
+            }}
           />
         </div>
       )}

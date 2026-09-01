@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import JSZip from 'jszip';
 import App from './App';
-import { runConversionJob } from './lib/pipeline/convertJob';
+import { runConversionJob, DEFAULT_JOB_CONFIG } from './lib/pipeline/convertJob';
 import { buildPreviews } from './lib/pipeline/preview';
 
 vi.mock('./lib/pipeline/convertJob', async (importOriginal) => {
@@ -396,5 +396,14 @@ describe('preview invalidation', () => {
     expect(screen.queryByLabelText(/normal state for folder/i)).not.toBeInTheDocument();
 
     await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+  });
+});
+
+describe('default configuration', () => {
+  it('defaults to the size GlowIcons was measured at', () => {
+    // glowRadiusFor(48) is 4 — the halo thickness decoded from Workbench 3.2.3 — so 48
+    // is the size at which the default Glow Surround output matches GlowIcons ring for
+    // ring. Below it the ramp starts truncating.
+    expect(DEFAULT_JOB_CONFIG.outputSizePx).toBe(48);
   });
 });

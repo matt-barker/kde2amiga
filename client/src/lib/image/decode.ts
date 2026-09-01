@@ -9,13 +9,23 @@ function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function drawToRgbaImage(img: HTMLImageElement, outputSizePx: number): RgbaImage {
+/**
+ * Draws `img` into an `outputSizePx` canvas, holding `insetPx` of clear margin around it.
+ *
+ * The canvas keeps the size that was asked for and the artwork shrinks to fit inside the
+ * margin, rather than the canvas growing — a NewIcons gadget box is one size for both
+ * states, so a margin that changed the box would resize every icon the moment it was
+ * selected. Reserving it here instead is what AmigaOS's own GlowIcons do: 38x38 of
+ * drawing inside a ~46px box, with the halo living entirely in what is left over.
+ */
+function drawToRgbaImage(img: HTMLImageElement, outputSizePx: number, insetPx = 0): RgbaImage {
   const canvas = document.createElement('canvas');
   canvas.width = outputSizePx;
   canvas.height = outputSizePx;
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, outputSizePx, outputSizePx);
-  ctx.drawImage(img, 0, 0, outputSizePx, outputSizePx);
+  const inner = Math.max(1, outputSizePx - insetPx * 2);
+  ctx.drawImage(img, insetPx, insetPx, inner, inner);
   const imageData = ctx.getImageData(0, 0, outputSizePx, outputSizePx);
   return { width: outputSizePx, height: outputSizePx, data: imageData.data };
 }
@@ -81,16 +91,28 @@ function ensureSvgSize(svgText: string, size: number): string {
   });
 }
 
-export async function rasterizeSvg(svgText: string, outputSizePx: number): Promise<RgbaImage> {
-  const base64 = bytesToBase64(new TextEncoder().encode(ensureSvgSize(svgText, outputSizePx)));
+export async function rasterizeSvg(
+  svgText: string,
+  outputSizePx: number,
+  insetPx = 0,
+): Promise<RgbaImage> {
+  // Pin the viewport to the size the drawing will actually occupy, not the canvas: an
+  // SVG rasterized at 48 and then drawn into 40 is resampled, which is the one thing
+  // vector artwork never has to put up with.
+  const inner = Math.max(1, outputSizePx - insetPx * 2);
+  const base64 = bytesToBase64(new TextEncoder().encode(ensureSvgSize(svgText, inner)));
   const url = `data:image/svg+xml;base64,${base64}`;
   const img = await loadImageElement(url);
-  return drawToRgbaImage(img, outputSizePx);
+  return drawToRgbaImage(img, outputSizePx, insetPx);
 }
 
-export async function decodePng(bytes: Uint8Array, outputSizePx: number): Promise<RgbaImage> {
+export async function decodePng(
+  bytes: Uint8Array,
+  outputSizePx: number,
+  insetPx = 0,
+): Promise<RgbaImage> {
   const base64 = bytesToBase64(bytes);
   const url = `data:image/png;base64,${base64}`;
   const img = await loadImageElement(url);
-  return drawToRgbaImage(img, outputSizePx);
+  return drawToRgbaImage(img, outputSizePx, insetPx);
 }

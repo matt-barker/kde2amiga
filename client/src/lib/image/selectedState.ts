@@ -1,6 +1,71 @@
+import { bayerFraction } from './dither';
+
 export type SelectedStateEffect = 'invert' | 'brighten' | 'darken' | 'tint' | 'glowSurround';
 
 type Rgb = [number, number, number];
+
+/**
+ * The halo GlowIcons draws around a selected icon, from the artwork outward.
+ *
+ * Decoded from a Workbench 3.2.3 screenshot rather than guessed at: isolating the
+ * ReAction icon's silhouette and running a Manhattan distance transform outward from
+ * it puts every one of the 152 white pixels at distance 1, all 135 bright-yellow at 2,
+ * and all 109 solid pale-gold at 3 — no exceptions in either direction. Distance 4 is
+ * the same gold at half coverage, and nothing is drawn past it.
+ */
+export const GLOWICONS_RAMP: Rgb[] = [
+  [255, 255, 255],
+  [239, 231, 23],
+  [223, 187, 71],
+];
+
+/**
+ * The grey a derived ramp fades its outer stop into.
+ *
+ * GlowIcons' third stop is not a darkening of its second — it is that yellow washed
+ * toward the Workbench grey it is drawn against, which is what makes the halo read as
+ * fading out rather than as a dark rim. A ramp derived from some other colour has to
+ * fade toward the same ground to keep that behaviour.
+ */
+const WORKBENCH_GREY: Rgb = [0xab, 0xab, 0xab];
+
+/** How thick GlowIcons' halo is, and the artwork box it was measured in. */
+const GLOWICONS_HALO_PX = 4;
+const GLOWICONS_BOX_PX = 48;
+
+function mix([r, g, b]: Rgb, [tr, tg, tb]: Rgb, t: number): Rgb {
+  return [
+    Math.round(r + (tr - r) * t),
+    Math.round(g + (tg - g) * t),
+    Math.round(b + (tb - b) * t),
+  ];
+}
+
+/**
+ * How many rings of halo an icon of this size gets.
+ *
+ * Holding GlowIcons' 4px-in-48 ratio rather than fixing the thickness keeps the glow
+ * reading the same relative to the artwork at every offered size: a flat 4px would
+ * swallow a 24px icon and all but disappear on a 128px one. The floor of one ring
+ * matters because that single white ring is exactly what this effect drew before it
+ * was graded, so tiny icons degrade to the old behaviour instead of to nothing.
+ */
+export function glowRadiusFor(sizePx: number): number {
+  return Math.max(1, Math.round((sizePx * GLOWICONS_HALO_PX) / GLOWICONS_BOX_PX));
+}
+
+/**
+ * The three colours a halo ramps through, innermost first.
+ *
+ * With no colour chosen this is GlowIcons' own ramp, verbatim, so the default output
+ * matches theirs. A chosen colour keeps the middle stop — the one the eye reads as
+ * "the glow" — and gets a lightened core inside it and a ground-washed stop outside,
+ * which is the same shape as the ramp GlowIcons built around its yellow.
+ */
+export function glowRamp(glowColor?: Rgb): Rgb[] {
+  if (!glowColor) return GLOWICONS_RAMP;
+  return [mix(glowColor, [255, 255, 255], 0.6), glowColor, mix(glowColor, WORKBENCH_GREY, 0.35)];
+}
 
 function clamp(n: number): number {
   return Math.max(0, Math.min(255, n));
@@ -41,6 +106,40 @@ function transformColor(effect: SelectedStateEffect, [r, g, b]: Rgb, tintColor?:
   }
 }
 
+/**
+ * Manhattan distance from every pixel to the nearest drawn one, saturating past `limit`.
+ *
+ * Two sweeps — one down-right, one up-left — are enough for a 4-connected metric, which
+ * is the metric GlowIcons uses: in the decoded screenshot a diagonal neighbour of the
+ * artwork sits on the second ring, not the first, so corners do not count as adjacency.
+ * Saturating rather than tracking true distances keeps the values small and means the
+ * cost does not grow with the size of the transparent margin.
+ */
+function distanceToArtwork(pixels: number[], width: number, height: number, limit: number): Int32Array {
+  const beyond = limit + 1;
+  const distance = new Int32Array(width * height);
+  for (let i = 0; i < distance.length; i++) distance[i] = pixels[i] !== 0 ? 0 : beyond;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (y > 0) distance[i] = Math.min(distance[i], distance[i - width] + 1);
+      if (x > 0) distance[i] = Math.min(distance[i], distance[i - 1] + 1);
+    }
+  }
+  for (let y = height - 1; y >= 0; y--) {
+    for (let x = width - 1; x >= 0; x--) {
+      const i = y * width + x;
+      if (y < height - 1) distance[i] = Math.min(distance[i], distance[i + width] + 1);
+      if (x < width - 1) distance[i] = Math.min(distance[i], distance[i + 1] + 1);
+    }
+  }
+  return distance;
+}
+
+/** Conceptual bands in the halo: the three ramp stops, plus the outer stop dithered. */
+const HALO_BANDS = 4;
+
 export function applySelectedStateEffect(
   effect: SelectedStateEffect,
   palette: Rgb[],
@@ -65,41 +164,44 @@ export function applySelectedStateEffect(
 
   if (effect === 'glowSurround') {
     /*
-     * A chosen colour is honoured through the palette, not around it. Both states of an
-     * .info share one palette, so the glow can only ever be an entry in it — which is why
-     * `prepareIcon` reserves a slot and appends the picked colour verbatim when one is
-     * set, making this lookup exact rather than approximate. Asking for the nearest entry
-     * regardless keeps the function honest if it is ever called with a palette that has
-     * no room for the colour: the glow degrades to the closest available, never to the
-     * transparent slot.
+     * The halo GlowIcons draws, rather than the single-pixel outline this once grew.
      *
-     * With no colour chosen it stays what it always was — the brightest entry, i.e. the
-     * white-ish halo GlowIcons draws.
+     * Decoded from a Workbench 3.2.3 screenshot: rings of white, bright yellow and pale
+     * gold at Manhattan distance 1, 2 and 3 from the artwork, then the same gold at half
+     * coverage at distance 4, then nothing. The ramp colours are looked up rather than
+     * assumed present because both states of an .info share one palette — `prepareIcon`
+     * reserves slots for them, which makes these lookups exact, but asking for the
+     * nearest entry keeps the function honest if it is ever handed a palette with no
+     * room. Nothing can land on index 0: that is the transparency hole, and a glow drawn
+     * there would simply be invisible.
      */
-    const glowIndex = glowColor
-      ? nearestPaletteIndex(glowColor, palette)
-      : palette.reduce(
-          (best, color, index) => {
-            const brightness = color[0] + color[1] + color[2];
-            return brightness > best.brightness ? { index, brightness } : best;
-          },
-          { index: 0, brightness: -1 },
-        ).index;
-
-    const preGlow = result.slice();
+    const rampIndices = glowRamp(glowColor).map((color) => nearestPaletteIndex(color, palette));
+    // The pipeline only ever produces square canvases, sized to the requested output.
+    const radius = glowRadiusFor(Math.max(width, height));
+    const distance = distanceToArtwork(result, width, height, radius);
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const i = y * width + x;
-        if (preGlow[i] !== 0) continue; // only grow into background/transparent pixels
-        const neighbors = [
-          [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
-        ];
-        const touchesForeground = neighbors.some(([nx, ny]) => {
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false;
-          return preGlow[ny * width + nx] !== 0;
-        });
-        if (touchesForeground) result[i] = glowIndex;
+        const rings = distance[i];
+        if (rings < 1 || rings > radius) continue;
+        /*
+         * Stretch the four bands across whatever radius this size affords. Dividing by at
+         * least HALO_BANDS means a radius too small for every band truncates the ramp from
+         * the outside in — a 2px halo is core and middle, not all three squeezed into two
+         * — so small icons lose the faintest stop rather than the structure. A radius of
+         * one leaves just the white core, which is exactly what this effect drew before it
+         * was graded.
+         */
+        const band = Math.min(
+          HALO_BANDS - 1,
+          Math.floor(((rings - 1) * HALO_BANDS) / Math.max(radius, HALO_BANDS)),
+        );
+        // The outermost band is the outer stop at half coverage. 1-bit transparency cannot
+        // fade, so the falloff buys its last level from the same ordered-dither cell the
+        // palette mapper uses; at 50% the Bayer 4x4 resolves to a plain 2x2 checker.
+        if (band === HALO_BANDS - 1 && bayerFraction(x, y) >= 0.5) continue;
+        result[i] = rampIndices[Math.min(band, rampIndices.length - 1)];
       }
     }
   }

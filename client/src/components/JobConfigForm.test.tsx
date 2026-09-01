@@ -163,14 +163,32 @@ describe('glow surround colour', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ glowColor: [0x00, 0xff, 0x88] }));
   });
 
-  it('seeds white when the effect is first switched to Glow Surround', () => {
-    // Without this the picker would show white while conversion still used the icon's
-    // own brightest colour — the control would be describing something it did not set.
+  it('shows the GlowIcons yellow while no colour has been picked', () => {
+    // An unset glowColor draws GlowIcons' own ramp, whose middle ring — the one the eye
+    // reads as the glow — is exactly this yellow. So the picker is describing what
+    // conversion draws, not standing in for it.
+    const { glowColor: _unset, ...unpicked } = glowConfig;
+    render(<JobConfigForm config={unpicked} onChange={vi.fn()} />);
+    expect(screen.getByLabelText(/glow colour/i)).toHaveValue('#efe717');
+  });
+
+  it('leaves the glow unset when the effect is first switched on', () => {
+    // Seeding a colour here would quietly swap GlowIcons' measured ramp for one derived
+    // from its middle stop — close, but no longer the thing being replicated.
     const onChange = vi.fn();
     render(<JobConfigForm config={baseConfig} onChange={onChange} />);
     fireEvent.change(screen.getByLabelText(/selected-state effect/i), { target: { value: 'glowSurround' } });
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ selectedEffect: 'glowSurround', glowColor: [255, 255, 255] }),
-    );
+    const emitted = onChange.mock.calls[0][0] as JobConfig;
+    expect(emitted.selectedEffect).toBe('glowSurround');
+    expect(emitted.glowColor).toBeUndefined();
+  });
+
+  it('reads picking the GlowIcons yellow back as a return to the default ramp', () => {
+    // Otherwise the control would be a one-way door: the exact ramp would be reachable
+    // on first switching the effect on and never again.
+    const onChange = vi.fn();
+    render(<JobConfigForm config={glowConfig} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText(/glow colour/i), { target: { value: '#efe717' } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ glowColor: undefined }));
   });
 });
