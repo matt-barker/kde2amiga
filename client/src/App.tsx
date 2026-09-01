@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type JSZip from 'jszip';
 import { ThemeLoader } from './components/ThemeLoader';
 import { IconGallery } from './components/IconGallery';
 import { JobConfigForm } from './components/JobConfigForm';
 import { SelectedIconList, type IconAssignment } from './components/SelectedIconList';
-import type { IconGroup } from './lib/theme/themeParser';
+import type { IconGroup, IconVariant } from './lib/theme/themeParser';
 import { inferIconKind } from './lib/theme/iconKind';
 import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
 
@@ -26,20 +26,38 @@ export default function App() {
     [groups, selected],
   );
 
-  // Seed a kind for anything newly selected; never clobber a kind the user has set.
-  useEffect(() => {
+  // Looked up by zipPath rather than re-flattening `groups` on every selection change —
+  // themes can hold hundreds of thousands of variants (see IconGallery's windowing note).
+  const variantByZipPath = useMemo(() => {
+    const map = new Map<string, IconVariant>();
+    for (const group of groups) {
+      for (const variant of group.variants) map.set(variant.zipPath, variant);
+    }
+    return map;
+  }, [groups]);
+
+  // Selection only ever changes through this handler (IconGallery's toggle always
+  // routes back through onSelectionChange, and a fresh theme load replaces `selected`
+  // wholesale in handleThemeLoaded below) — so seeding the assignment here, right where
+  // the selection itself changes, covers every case without a separate effect watching
+  // for it. Only zipPaths newly present are seeded; anything already in `assignments`
+  // (a user override, or one seeded earlier) is left untouched.
+  function handleSelectionChange(nextSelected: Set<string>) {
+    setSelected(nextSelected);
     setAssignments((current) => {
       const next = new Map(current);
       let changed = false;
-      for (const variant of selectedVariants) {
-        if (!next.has(variant.zipPath)) {
-          next.set(variant.zipPath, { kind: inferIconKind(variant.name, variant.category) });
+      for (const zipPath of nextSelected) {
+        if (!next.has(zipPath)) {
+          const variant = variantByZipPath.get(zipPath);
+          if (!variant) continue;
+          next.set(zipPath, { kind: inferIconKind(variant.name, variant.category) });
           changed = true;
         }
       }
       return changed ? next : current;
     });
-  }, [selectedVariants]);
+  }
 
   function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
     setZip(loadedZip);
@@ -85,7 +103,7 @@ export default function App() {
             zip={zip}
             groups={groups}
             selected={selected}
-            onSelectionChange={setSelected}
+            onSelectionChange={handleSelectionChange}
           />
           <SelectedIconList
             variants={selectedVariants}
