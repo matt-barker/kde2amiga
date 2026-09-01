@@ -33,11 +33,43 @@ function toImageData(
 }
 
 /**
+ * How many icons are decoded between yields back to the browser's event loop.
+ *
+ * `await` alone is not enough: `decodeThemeIcon`'s promises settle on the microtask
+ * queue, which the browser drains without ever getting a chance to paint or handle
+ * input. A macrotask (`setTimeout(0)`) is what actually lets the tab breathe, so a
+ * few-hundred-icon selection cannot freeze it.
+ */
+const YIELD_EVERY = 8;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
  * Renders exactly what conversion would produce for the current selection.
  *
  * The palette is built once across every selected icon, matching `runConversionJob`.
  * That is why previews are recomputed whenever the selection or config changes: adding
  * or removing an icon changes the shared palette and therefore every other preview.
+ *
+ * That pixel-for-pixel identity with `runConversionJob` is the branch's Global
+ * Constraint, and it is pinned by the "preview / conversion pixel identity" test in
+ * preview.test.ts — which runs the real conversion, decodes the .info bytes back out of
+ * the output zip with the upstream-ported decoder, and compares. Any stage added to one
+ * path must be added to the other, or that test fails.
+ *
+ * Known gap, deliberately left open: `runConversionJob` applies `compositeBadge` before
+ * quantization when a `JobIconInput` carries a badge. This function takes `IconVariant[]`
+ * rather than `JobIconInput[]`, so it structurally cannot. Badges are unwired today (no
+ * UI ever sets one), so the two paths agree in practice and the identity test passes —
+ * but wiring the badge UI up without also giving previews the badge will silently break
+ * that identity, and the identity test is the thing that will tell you.
+ *
+ * Also deliberately deferred: progressive/incremental emission of previews as each icon
+ * finishes (spec §4). This builds the whole batch and resolves once. That is an omission,
+ * not an oversight — the yields below are enough to keep the tab responsive, and
+ * streaming results out is a feature-shaped change that belongs in its own task.
  */
 export async function buildPreviews(
   zip: JSZip,
@@ -46,7 +78,8 @@ export async function buildPreviews(
 ): Promise<IconPreview[]> {
   const decoded: Array<{ variant: IconVariant; image: RgbaImage }> = [];
 
-  for (const variant of variants) {
+  for (const [index, variant] of variants.entries()) {
+    if (index > 0 && index % YIELD_EVERY === 0) await yieldToEventLoop();
     try {
       decoded.push({ variant, image: await decodeThemeIcon(zip, variant, config.outputSizePx) });
     } catch (error) {
