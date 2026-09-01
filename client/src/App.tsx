@@ -86,18 +86,73 @@ export default function App() {
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // Bumped on every theme load so previews built for the previous theme can never be
+  // mistaken for the new one's — see previewSignature below.
+  const [themeSerial, setThemeSerial] = useState(0);
 
+  // Looked up by zipPath rather than re-flattening `groups` on every selection change —
+  // themes can hold hundreds of thousands of variants (see IconGallery's windowing note).
+  const variantByZipPath = useMemo(() => {
+    const map = new Map<string, IconVariant>();
+    for (const group of groups) {
+      for (const variant of group.variants) map.set(variant.zipPath, variant);
+    }
+    return map;
+  }, [groups]);
+
+  // Derived from the selection, not by re-scanning every variant in the theme: this runs
+  // on every selection change, and it is O(selection) rather than O(272k).
   const selectedVariants = useMemo(
-    () => groups.flatMap((g) => g.variants).filter((v) => selected.has(v.zipPath)),
-    [groups, selected],
+    () =>
+      Array.from(selected, (zipPath) => variantByZipPath.get(zipPath)).filter(
+        (variant): variant is IconVariant => variant !== undefined,
+      ),
+    [selected, variantByZipPath],
   );
 
-  const [previews, setPreviews] = useState<Map<string, IconPreview>>(new Map());
-  // Derived rather than set from the effect below: when there's nothing selected the
-  // previews are empty by definition, so there's no async work to synchronize and no
-  // need to route it through setState-in-effect (a react(set-state-in-effect) lint
-  // advisory this plan deliberately keeps out).
-  const visiblePreviews = zip && selectedVariants.length > 0 ? previews : EMPTY_PREVIEWS;
+  /**
+   * Identifies the inputs a preview batch was built from.
+   *
+   * Every preview depends on the whole batch (the palette is shared) and on the whole
+   * config, so a preview is valid only while *nothing* about either has changed. Rather
+   * than clearing `previews` at each site that could invalidate them — and inevitably
+   * missing one, which is how a stale preview survived both a failed build and a grown
+   * selection — the stored batch carries the signature it was built for, and previews
+   * render only while that still matches. Anything that changes the signature clears the
+   * previews by construction, with no clearing site to forget.
+   *
+   * `themeSerial` is in here because zipPaths are archive-relative: a new theme can reuse
+   * the previous one's exact paths, and without it an identical selection in a different
+   * theme would produce an identical signature and show the old theme's pictures.
+   *
+   * The selection goes in *in order*, not sorted. `buildSharedPalette` concatenates the
+   * batch's pixels in the order it is handed them and median-cuts the result, so the same
+   * set of icons in a different order is not guaranteed to yield the same palette. A
+   * sorted signature would call those two batches identical and could show previews built
+   * under one ordering while conversion used the other — which is exactly the
+   * preview/output divergence this branch's Global Constraint forbids. Worst case an
+   * order change costs one extra rebuild; that is the cheap side of the trade.
+   */
+  const previewSignature = useMemo(
+    () =>
+      JSON.stringify([
+        themeSerial,
+        config.outputSizePx,
+        config.maxColors,
+        config.selectedEffect,
+        config.tintColor ?? null,
+        Array.from(selected),
+      ]),
+    [themeSerial, config, selected],
+  );
+
+  const [previewBatch, setPreviewBatch] = useState<{
+    signature: string;
+    map: Map<string, IconPreview>;
+  }>(() => ({ signature: '', map: EMPTY_PREVIEWS }));
+
+  const visiblePreviews =
+    previewBatch.signature === previewSignature ? previewBatch.map : EMPTY_PREVIEWS;
 
   // Debounced: the shared palette makes every preview depend on the whole selection,
   // so each change invalidates all of them. Recomputing on every keystroke-fast
@@ -109,8 +164,14 @@ export default function App() {
       buildPreviews(zip, selectedVariants, config)
         .then((built) => {
           if (cancelled) return;
-          setPreviews(new Map(built.map((p) => [p.zipPath, p])));
+          setPreviewBatch({
+            signature: previewSignature,
+            map: new Map(built.map((p) => [p.zipPath, p])),
+          });
         })
+        // A failed build stores nothing, so `previewBatch` keeps a signature that no
+        // longer matches and nothing is rendered — the failure shows as absence, never
+        // as the previous batch's pictures.
         .catch((err) => console.warn('Preview build failed:', err));
     }, 250);
 
@@ -118,17 +179,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [zip, selectedVariants, config]);
-
-  // Looked up by zipPath rather than re-flattening `groups` on every selection change —
-  // themes can hold hundreds of thousands of variants (see IconGallery's windowing note).
-  const variantByZipPath = useMemo(() => {
-    const map = new Map<string, IconVariant>();
-    for (const group of groups) {
-      for (const variant of group.variants) map.set(variant.zipPath, variant);
-    }
-    return map;
-  }, [groups]);
+  }, [zip, selectedVariants, config, previewSignature]);
 
   // Selection only ever changes through this handler (IconGallery's toggle always
   // routes back through onSelectionChange, and a fresh theme load replaces `selected`
@@ -152,27 +203,16 @@ export default function App() {
       }
       return changed ? next : current;
     });
-    // The preview-build effect only runs (and replaces `previews`) while the selection
-    // is non-empty — see its early return above. Left uncleared here, a stale entry
-    // built under a now-superseded config could survive a deselect and be shown again,
-    // wrongly, the instant its zipPath is reselected, for as long as the next debounce
-    // takes to resolve. Clearing it here, in the callback that owns this transition,
-    // keeps that impossible without routing state-setting through the effect.
-    if (nextSelected.size === 0) setPreviews(new Map());
   }
 
   function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
     setZip(loadedZip);
     setGroups(loadedGroups);
+    setThemeSerial((serial) => serial + 1);
     setSelected(new Set());
     // zipPaths are archive-relative, so a new theme can reuse the exact paths of the
     // last one — carrying assignments forward would silently mislabel a different icon.
     setAssignments(new Map());
-    // Same reasoning as handleSelectionChange: a new theme resets selection to empty
-    // directly (not via that handler), so it must clear stale previews itself too —
-    // otherwise a reused zipPath in the new theme could momentarily show the old
-    // theme's preview image.
-    setPreviews(new Map());
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setDownloadUrl(null);
     setError(null);
@@ -235,14 +275,7 @@ export default function App() {
           />
           <JobConfigForm
             config={config}
-            onChange={(next) => {
-              setConfig(next);
-              // Every cached preview was built under the old config's palette/effect,
-              // so all of them are invalid the instant config changes — regardless of
-              // whether anything is currently selected. Cleared here, at the source of
-              // the change, rather than in the build effect (see handleSelectionChange).
-              setPreviews(new Map());
-            }}
+            onChange={setConfig}
           />
           <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
             {converting ? 'Converting…' : 'Convert'}

@@ -3,10 +3,16 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import JSZip from 'jszip';
 import App from './App';
 import { runConversionJob } from './lib/pipeline/convertJob';
+import { buildPreviews } from './lib/pipeline/preview';
 
 vi.mock('./lib/pipeline/convertJob', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/pipeline/convertJob')>();
   return { ...actual, runConversionJob: vi.fn(actual.runConversionJob) };
+});
+
+vi.mock('./lib/pipeline/preview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/pipeline/preview')>();
+  return { ...actual, buildPreviews: vi.fn(actual.buildPreviews) };
 });
 
 async function makeThemeZipFile(): Promise<File> {
@@ -276,5 +282,53 @@ describe('App end-to-end', () => {
     expect(alert).toHaveTextContent(/folder-open/);
     expect(runConversionJob).not.toHaveBeenCalled();
     expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it('drops the existing previews the instant the selection grows', async () => {
+    render(<App />);
+
+    const file = await makeTwoIconThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+
+    // The palette is built across the whole selection, so *adding* an icon invalidates
+    // every preview already on screen just as thoroughly as a config change does. Showing
+    // folder's old preview through the debounce window is showing a picture computed under
+    // a palette the output will not use.
+    fireEvent.click(galleryCheckboxFor('text-x-generic'));
+    expect(screen.queryByLabelText(/normal state for folder/i)).not.toBeInTheDocument();
+
+    // Both come back once the rebuild under the new palette lands.
+    await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+    await screen.findByLabelText(/normal state for text-x-generic/i, {}, { timeout: 2000 });
+  });
+
+  it('shows no previews at all when the build fails, rather than the previous ones', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      render(<App />);
+
+      const file = await makeTwoIconThemeZipFile();
+      fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+      await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+
+      fireEvent.click(galleryCheckboxFor('folder'));
+      await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+
+      vi.mocked(buildPreviews).mockRejectedValueOnce(new Error('decode exploded'));
+      fireEvent.click(galleryCheckboxFor('text-x-generic'));
+
+      await waitFor(() => expect(warn).toHaveBeenCalled(), { timeout: 2000 });
+      // Well past the 250ms debounce and the failed build: a rejected build must leave the
+      // screen empty, not silently keep rendering previews from a superseded selection.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.queryByLabelText(/normal state for folder/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/normal state for text-x-generic/i)).not.toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
