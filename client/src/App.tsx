@@ -9,7 +9,14 @@ import { defaultAssignment, type IconAssignment } from './lib/theme/assignment';
 import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
 import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
 
-const DEFAULT_CONFIG: JobConfig = { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' };
+const DEFAULT_CONFIG: JobConfig = {
+  outputSizePx: 32,
+  maxColors: 16,
+  selectedEffect: 'invert',
+  // The standard Workbench grey. Smoothing edges against it is on by default because
+  // it is what the OS's own GlowIcons assume; it can be switched off for other backdrops.
+  backgroundColor: [0xab, 0xab, 0xab],
+};
 
 // A single shared instance so it doesn't cause a fresh Map identity every render.
 const EMPTY_PREVIEWS: Map<string, IconPreview> = new Map();

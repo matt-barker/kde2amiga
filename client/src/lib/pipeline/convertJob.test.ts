@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
+
+function solid(width: number, height: number, rgba: [number, number, number, number]) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) data.set(rgba, i * 4);
+  return { width, height, data };
+}
 import JSZip from 'jszip';
-import { runConversionJob, decodeThemeIcon, paletteIndicesFor } from './convertJob';
+import { runConversionJob, decodeThemeIcon, prepareIcon } from './convertJob';
 import type { IconVariant } from '../theme/themeParser';
 
 describe('runConversionJob', () => {
@@ -49,9 +55,14 @@ describe('runConversionJob', () => {
     expect(progressLog[progressLog.length - 1]).toEqual([2, 2]);
   });
 
-  it('exposes per-icon decode and palette mapping for previews', async () => {
+  it('exposes per-icon decode and preparation for previews', async () => {
     const zip = new JSZip();
-    zip.file('t/32/apps/a.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#ff0000"/></svg>');
+    // Red and its own inverse, cyan. selectedState.ts's nearestPaletteIndex reserves
+    // index 0 for transparency and never remaps a foreground pixel onto it, so a
+    // palette holding one foreground colour would leave invert with nowhere to go and
+    // the assertion below vacuous. Palettes are per icon now, so the fixture has to
+    // carry both colours rather than the test injecting them.
+    zip.file('t/32/apps/a.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="16" fill="#ff0000"/><rect y="16" width="32" height="16" fill="#00ffff"/></svg>');
 
     const image = await decodeThemeIcon(
       zip,
@@ -61,18 +72,39 @@ describe('runConversionJob', () => {
     expect(image.width).toBe(32);
     expect(image.height).toBe(32);
 
-    // Includes cyan (255,0,0 inverted) so the palette actually has somewhere for
-    // the inverted colour to land: selectedState.ts's nearestPaletteIndex reserves
-    // index 0 for transparency and never remaps a foreground pixel onto it, so a
-    // 2-colour (transparent + single foreground) palette would leave invert with no
-    // other index to choose and the assertion below would be vacuous.
-    const palette: [number, number, number][] = [[0, 0, 0], [255, 0, 0], [0, 255, 255]];
-    const { normal, selected } = paletteIndicesFor(image, palette, {
-      outputSizePx: 32, maxColors: 2, selectedEffect: 'invert',
+    const { normal, selected } = prepareIcon(image, {
+      outputSizePx: 32, maxColors: 8, selectedEffect: 'invert',
     });
 
     expect(normal).toHaveLength(32 * 32);
     expect(selected).toHaveLength(32 * 32);
     expect(selected).not.toEqual(normal); // invert must actually change something
+  });
+
+  it('builds the palette from the one icon it is given', () => {
+    // Batch-wide palettes are what the 34-entry ceiling made so costly.
+    const red = solid(4, 4, [255, 0, 0, 255]);
+    const { palette } = prepareIcon(red, { outputSizePx: 4, maxColors: 8, selectedEffect: 'invert' });
+    expect(palette[0]).toEqual([0, 0, 0]); // reserved transparent slot
+    for (const entry of palette.slice(1)) expect(entry).toEqual([255, 0, 0]);
+  });
+
+  it('bakes a soft edge onto the configured background', () => {
+    // 1-bit alpha cannot anti-alias a silhouette, so smoothing it means compositing
+    // the fringe against the backdrop the icon will sit on.
+    const image = solid(1, 1, [0, 0, 0, 128]);
+    const { palette, normal } = prepareIcon(image, {
+      outputSizePx: 1, maxColors: 8, selectedEffect: 'invert', backgroundColor: [0xab, 0xab, 0xab],
+    });
+    expect(normal[0]).not.toBe(0); // drawn, not dropped
+    expect(palette[normal[0]]).toEqual([85, 85, 85]); // blended halfway to the grey
+  });
+
+  it('leaves the edge hard when no background is configured', () => {
+    const image = solid(1, 1, [0, 0, 0, 128]);
+    const { palette, normal } = prepareIcon(image, {
+      outputSizePx: 1, maxColors: 8, selectedEffect: 'invert',
+    });
+    expect(palette[normal[0]]).toEqual([0, 0, 0]); // the source colour, unblended
   });
 });

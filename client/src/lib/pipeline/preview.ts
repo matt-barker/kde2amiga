@@ -1,7 +1,7 @@
 import type JSZip from 'jszip';
 import type { IconVariant } from '../theme/themeParser';
-import { buildSharedPalette, type RgbaImage } from '../image/quantize';
-import { decodeThemeIcon, paletteIndicesFor, type JobConfig } from './convertJob';
+import type { RgbaImage } from '../image/quantize';
+import { decodeThemeIcon, prepareIcon, type JobConfig } from './convertJob';
 
 export interface IconPreview {
   zipPath: string;
@@ -49,9 +49,10 @@ function yieldToEventLoop(): Promise<void> {
 /**
  * Renders exactly what conversion would produce for the current selection.
  *
- * The palette is built once across every selected icon, matching `runConversionJob`.
- * That is why previews are recomputed whenever the selection or config changes: adding
- * or removing an icon changes the shared palette and therefore every other preview.
+ * Every per-icon decision — flattening, palette, mapping, the selected state — belongs
+ * to `prepareIcon`, which conversion calls too. Neither path chooses a palette itself,
+ * so the two cannot drift apart. Palettes are per icon, so a preview no longer depends
+ * on what else happens to be selected.
  *
  * That pixel-for-pixel identity with `runConversionJob` is the branch's Global
  * Constraint, and it is pinned by the "preview / conversion pixel identity" test in
@@ -87,16 +88,14 @@ export async function buildPreviews(
     }
   }
 
-  const palette = buildSharedPalette(decoded.map((d) => d.image), config.maxColors);
-
   return decoded.map(({ variant, image }) => {
-    const { normal, selected } = paletteIndicesFor(image, palette, config);
+    const { palette, normal, selected, width, height } = prepareIcon(image, config);
     return {
       zipPath: variant.zipPath,
-      width: image.width,
-      height: image.height,
-      normal: toImageData(normal, palette, image.width, image.height),
-      selected: toImageData(selected, palette, image.width, image.height),
+      width,
+      height,
+      normal: toImageData(normal, palette, width, height),
+      selected: toImageData(selected, palette, width, height),
     };
   });
 }

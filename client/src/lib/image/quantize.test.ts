@@ -107,3 +107,67 @@ describe('faint pixels', () => {
     for (const [, , blue] of palette.slice(1)) expect(blue).toBeLessThan(128);
   });
 });
+
+describe('dithered colour', () => {
+  function flat(width: number, height: number, rgb: [number, number, number]): RgbaImage {
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < width * height; i++) data.set([...rgb, 255], i * 4);
+    return { width, height, data };
+  }
+  const TWO_BLUES: [number, number, number][] = [[0, 0, 0], [0x51, 0x81, 0xb0], [0x61, 0x90, 0xc0]];
+
+  it('leaves a colour that matches a palette entry exactly alone', () => {
+    // Ordered dithering must not add noise to flat artwork. A pixel sitting on a
+    // palette entry has no residual to spread, so it takes that entry every time.
+    const indices = mapImageToPalette(flat(8, 8, [0x51, 0x81, 0xb0]), TWO_BLUES);
+    expect(new Set(indices)).toEqual(new Set([1]));
+  });
+
+  it('alternates between the two nearest entries for a colour midway between them', () => {
+    // This is the GlowIcons trick: the ScreenMode monitor's screen is 5181b0 and
+    // 6190c0 interleaved, a gradient faked from two palette slots.
+    const midpoint: [number, number, number] = [0x59, 0x88, 0xb8];
+    const indices = mapImageToPalette(flat(8, 8, midpoint), TWO_BLUES);
+    expect(indices.filter((i) => i === 1)).toHaveLength(32);
+    expect(indices.filter((i) => i === 2)).toHaveLength(32);
+  });
+
+  it('leans toward whichever entry the colour is closer to', () => {
+    // Density has to track position along the blend, or a gradient dithers evenly
+    // everywhere and reads as one flat mixture instead of a ramp.
+    const secondCount = (rgb: [number, number, number]) =>
+      mapImageToPalette(flat(8, 8, rgb), TWO_BLUES).filter((i) => i === 2).length;
+    expect(secondCount([0x53, 0x83, 0xb2])).toBeLessThan(secondCount([0x59, 0x88, 0xb8]));
+    expect(secondCount([0x59, 0x88, 0xb8])).toBeLessThan(secondCount([0x5f, 0x8e, 0xbe]));
+  });
+
+  it('places the two colours in a checkerboard rather than in stripes', () => {
+    // Which colour lands on which square is arbitrary; that they alternate is not.
+    const indices = mapImageToPalette(flat(4, 1, [0x59, 0x88, 0xb8]), TWO_BLUES);
+    expect(new Set(indices)).toEqual(new Set([1, 2]));
+    for (let i = 1; i < indices.length; i++) expect(indices[i]).not.toBe(indices[i - 1]);
+  });
+
+  it('still leaves undrawn pixels transparent', () => {
+    const image = solidImage(4, 4, [0x59, 0x88, 0xb8, 0]);
+    expect(mapImageToPalette(image, TWO_BLUES).every((i) => i === 0)).toBe(true);
+  });
+
+  it('does not dither between two entries that are far apart in colour', () => {
+    // A checkerboard only reads as a blended tone when its two colours are close.
+    // GlowIcons never spans further than about 27 in RGB — its dithered monitor
+    // screen is 5181b0 against 6190c0. Alternating a red with an orange instead
+    // reads as speckle, which is what a too-small palette produced on the folder
+    // icons: yellow dots scattered over a red sheet of paper.
+    const farApart: [number, number, number][] = [[0, 0, 0], [200, 90, 90], [230, 175, 100]];
+    const indices = mapImageToPalette(flat(8, 8, [210, 110, 92]), farApart);
+    expect(new Set(indices)).toEqual(new Set([1]));
+  });
+
+  it('never dithers into the reserved transparent slot', () => {
+    // Index 0 is a hole, not a colour. A dark pixel blending toward it would punch
+    // gaps in solid artwork.
+    const palette: [number, number, number][] = [[0, 0, 0], [8, 8, 8], [240, 240, 240]];
+    expect(mapImageToPalette(flat(8, 8, [4, 4, 4]), palette).every((i) => i !== 0)).toBe(true);
+  });
+});

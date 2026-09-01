@@ -39,7 +39,7 @@ describe('buildPreviews', () => {
     expect(Array.from(previews[0].normal.data)).not.toEqual(Array.from(previews[0].selected.data));
   });
 
-  it('shares one palette across the whole selection, as conversion does', async () => {
+  it('gives each icon its own palette, so the selection does not colour its neighbours', async () => {
     const zip = new JSZip();
     zip.file('t/32/apps/a.svg', RED_SVG);
     zip.file(
@@ -54,9 +54,12 @@ describe('buildPreviews', () => {
       outputSizePx: 32, maxColors: 2, selectedEffect: 'invert',
     });
 
-    // With only two palette slots, adding a blue icon must change how the red one maps.
-    // This is the batch-wide-palette coupling the spec calls out.
-    expect(Array.from(together.normal.data)).not.toEqual(Array.from(alone.normal.data));
+    // A NewIcons .info carries its own palette, so sharing one across the batch was
+    // our choice, not the format's — and an expensive one: the ceiling is 34 entries
+    // for the whole selection, which left gradient-heavy icons on about a dozen
+    // colours and banding hard. Per icon, the same icons get the full 34. The red
+    // icon must now map identically whether or not a blue one is selected beside it.
+    expect(Array.from(together.normal.data)).toEqual(Array.from(alone.normal.data));
   });
 
   it('skips icons missing from the zip rather than failing the batch', async () => {

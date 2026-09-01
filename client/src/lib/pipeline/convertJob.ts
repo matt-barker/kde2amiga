@@ -3,6 +3,7 @@ import type { IconVariant } from '../theme/themeParser';
 import { rasterizeSvg, decodePng } from '../image/decode';
 import { compositeBadge, type BadgeOptions } from '../badges/compositeBadge';
 import { buildSharedPalette, mapImageToPalette, type RgbaImage } from '../image/quantize';
+import { flattenOntoBackground } from '../image/flatten';
 import { applySelectedStateEffect, type SelectedStateEffect } from '../image/selectedState';
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
 import { buildOutputZip, type ConvertedIcon } from '../output/zipBuilder';
@@ -19,6 +20,17 @@ export interface JobConfig {
   maxColors: number;
   selectedEffect: SelectedStateEffect;
   tintColor?: [number, number, number];
+  /**
+   * Backdrop to bake soft edges against, or undefined to leave them hard.
+   *
+   * NewIcons transparency is 1-bit, so a silhouette cannot carry the anti-aliasing the
+   * source SVG has — which is what leaves converted icons stair-stepped. Compositing
+   * the fringe against the colour the icon will sit on recovers it, at the price of
+   * assuming that colour: on any other backdrop the baked pixels read as a fringe.
+   * AmigaOS's own GlowIcons make exactly this trade, carrying an opaque grey shadow
+   * that only resolves against the standard Workbench grey.
+   */
+  backgroundColor?: [number, number, number];
 }
 
 export async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
@@ -33,19 +45,37 @@ export async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizeP
   return decodePng(bytes, outputSizePx);
 }
 
+export interface PreparedIcon {
+  palette: [number, number, number][];
+  normal: number[];
+  selected: number[];
+  width: number;
+  height: number;
+}
+
 /**
- * Maps one decoded image onto a palette, producing both icon states.
+ * Turns one decoded image into everything an `.info` needs: a palette and both states.
  *
- * Split out of `runConversionJob` so previews can render exactly what conversion
- * would produce. The palette is a parameter rather than computed here because
- * `buildSharedPalette` is batch-wide: a preview must be given the same palette the
- * whole selection will share, or it will not match the output.
+ * This is the single place the whole per-icon pipeline lives, and that is deliberate.
+ * Conversion and preview have to agree pixel for pixel — it is the constraint the
+ * "preview / conversion pixel identity" test pins — and they used to agree only by
+ * both remembering to perform the same steps in the same order against a palette
+ * passed in from outside. Owning flattening, palette choice and mapping together
+ * means the two callers cannot drift, because neither one makes those decisions.
+ *
+ * The palette is built from this icon alone. A NewIcons `.info` carries its own
+ * palette, so sharing one across the batch was our choice rather than the format's,
+ * and a costly one: the ceiling is 34 entries for the *entire* selection, which left
+ * gradient-heavy icons working from about a dozen colours. Per icon they get the
+ * full 34 — measured on a 36-icon batch, `preferences-desktop-gaming` went from 23
+ * colours to 33, `music` and `folder-music` from 17 and 16 to 33 each.
  */
-export function paletteIndicesFor(
-  image: RgbaImage,
-  palette: [number, number, number][],
-  config: JobConfig,
-): { normal: number[]; selected: number[] } {
+export function prepareIcon(decoded: RgbaImage, config: JobConfig): PreparedIcon {
+  const image = config.backgroundColor
+    ? flattenOntoBackground(decoded, config.backgroundColor)
+    : decoded;
+
+  const palette = buildSharedPalette([image], config.maxColors);
   const normal = mapImageToPalette(image, palette);
   const selected = applySelectedStateEffect(
     config.selectedEffect,
@@ -55,7 +85,7 @@ export function paletteIndicesFor(
     image.height,
     config.tintColor,
   );
-  return { normal, selected };
+  return { palette, normal, selected, width: image.width, height: image.height };
 }
 
 export async function runConversionJob(
@@ -82,17 +112,15 @@ export async function runConversionJob(
     }
   }
 
-  const palette = buildSharedPalette(decoded.map((d) => d.image), config.maxColors);
-
   const convertedIcons: ConvertedIcon[] = decoded.map(({ input, image }) => {
-    const { normal: normalPixels, selected: selectedPixels } = paletteIndicesFor(image, palette, config);
+    const { palette, normal, selected, width, height } = prepareIcon(image, config);
 
     const infoBytes = buildInfoFile({
-      width: image.width,
-      height: image.height,
+      width,
+      height,
       kind: input.kind,
-      normal: { width: image.width, height: image.height, transparent: true, palette, pixels: normalPixels },
-      selected: { width: image.width, height: image.height, transparent: true, palette, pixels: selectedPixels },
+      normal: { width, height, transparent: true, palette, pixels: normal },
+      selected: { width, height, transparent: true, palette, pixels: selected },
     });
 
     return { name: input.icon.name, infoBytes, role: input.role };
