@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { loadArchive } from './archive';
 import { parseTheme } from './themeParser';
+import { buildTar } from './untar.test';
 
 const BLOCK = 512;
 
@@ -136,5 +137,35 @@ describe('loadArchive', () => {
   it('throws a clear error for a buffer that is neither zip nor gzip', async () => {
     const garbage = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     await expect(loadArchive(garbage)).rejects.toThrow(/zip|gzip|archive/i);
+  });
+
+  it('accepts a ReadableStream of a gzipped tar and keeps only wanted files', async () => {
+    const tar = buildTar([fileEntry('theme/48x48/apps/a.svg', '<svg/>'), fileEntry('theme/LICENSE', 'not an icon')]);
+    const gzipped = new Uint8Array(
+      await new Response(
+        (
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(tar);
+              c.close();
+            },
+          }) as ReadableStream<Uint8Array<ArrayBuffer>>
+        ).pipeThrough(new CompressionStream('gzip')),
+      ).arrayBuffer(),
+    );
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        // Two chunks, split mid-archive, to prove sniffing survives chunking.
+        c.enqueue(gzipped.subarray(0, 3));
+        c.enqueue(gzipped.subarray(3));
+        c.close();
+      },
+    });
+
+    const zip = await loadArchive(stream);
+
+    expect(zip.file('theme/48x48/apps/a.svg')).not.toBeNull();
+    expect(zip.file('theme/LICENSE')).toBeNull();
   });
 });
