@@ -16,7 +16,7 @@ function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   });
 }
 
-function appWithProxy(options?: { maxBytes?: number }) {
+function appWithProxy(options?: { maxBytes?: number; headersTimeoutMs?: number; idleTimeoutMs?: number }) {
   const app = express();
   app.get('/api/fetch-url', createFetchProxyHandler(options));
   return app;
@@ -139,5 +139,93 @@ describe('createFetchProxyHandler', () => {
       '/api/fetch-url?url=' + encodeURIComponent('https://example.com/theme.zip'),
     );
     expect(res.status).toBe(502);
+  });
+
+  // The 30s budget used to be a single AbortSignal.timeout() passed to fetch(). In undici
+  // that signal aborts the *response body stream* too, not just connect/headers — so the
+  // very downloads the raised size cap exists to allow (a ~110MB .tar.xz needs ~30 Mbps to
+  // land inside 30s) were killed mid-body, and the client reported the generic "could not
+  // be read as an archive" message for what was really a timeout.
+  it('keeps streaming a slow body long past the headers budget, as long as it makes progress', async () => {
+    const chunk = new Uint8Array(1024);
+    let sent = 0;
+
+    // The stub deliberately models undici's behaviour rather than ignoring the signal:
+    // aborting the fetch signal errors the response body stream, mid-download. A stub that
+    // ignored the signal would pass this test whether the timeout covered the whole request
+    // or only the headers, which would make it worthless as a regression guard.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: { signal: AbortSignal }) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/zip' }),
+          body: new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              await new Promise((resolve) => setTimeout(resolve, 30));
+              if (init.signal.aborted) {
+                controller.error(new Error('This operation was aborted'));
+                return;
+              }
+              if (sent >= 10) {
+                controller.close();
+                return;
+              }
+              sent++;
+              controller.enqueue(chunk);
+            },
+          }),
+        }),
+      ),
+    );
+
+    // The whole body takes ~300ms, five times the headers budget.
+    const res = await request(appWithProxy({ headersTimeoutMs: 60, idleTimeoutMs: 400 })).get(
+      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/slow.tar.xz'),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(10 * 1024);
+  });
+
+  it('gives up when the upstream never sends response headers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+      ),
+    );
+
+    const res = await request(appWithProxy({ headersTimeoutMs: 50 })).get(
+      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/blackhole.zip'),
+    );
+
+    expect(res.status).toBe(502);
+  });
+
+  it('drops the connection when the upstream body stalls mid-stream', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/zip' }),
+        // One chunk, then silence forever: the stream is never closed and never errors.
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(16));
+          },
+        }),
+      }),
+    );
+
+    await expect(
+      request(appWithProxy({ headersTimeoutMs: 1000, idleTimeoutMs: 50 })).get(
+        '/api/fetch-url?url=' + encodeURIComponent('https://example.com/stalled.zip'),
+      ),
+    ).rejects.toThrow();
   });
 });

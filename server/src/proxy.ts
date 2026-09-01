@@ -9,8 +9,60 @@ import type { RequestHandler } from 'express';
  */
 export const MAX_PROXY_BYTES = 512 * 1024 * 1024;
 
-export function createFetchProxyHandler(options: { maxBytes?: number } = {}): RequestHandler {
+/**
+ * How long the upstream gets to produce response *headers*.
+ *
+ * Deliberately not a whole-request budget. It used to be one — a single
+ * `AbortSignal.timeout(30_000)` handed to `fetch` — and in undici that signal aborts the
+ * response body stream as well as the connect/headers phase. A ~110MB `.tar.xz` needs
+ * ~30 Mbps to land inside 30s and the 512MB cap needs ~137 Mbps, so on any ordinary link
+ * the read rejected mid-body, the socket was destroyed, and the client blamed the archive
+ * format ("could not be read as a zip, tar.gz or tar.xz archive") for what was a timeout.
+ * The cap and the timeout have to express the same budget, and a size cap says nothing
+ * about how long the transfer may take.
+ */
+export const HEADERS_TIMEOUT_MS = 30_000;
+
+/**
+ * How long the body may go without delivering a single chunk before we give up.
+ *
+ * This is the honest expression of "the upstream has stopped": it resets on every
+ * successful read, so a slow-but-progressing download of any size is fine, while a
+ * genuinely dead connection is still cut rather than pinning a socket forever.
+ */
+export const BODY_IDLE_TIMEOUT_MS = 60_000;
+
+/**
+ * One read, bounded by the idle timeout. The timer is created per read, so it restarts on
+ * every chunk that actually arrives: a long download is not a stalled one.
+ *
+ * If the timeout wins, the losing `read()` is simply abandoned — the caller cancels the
+ * reader and destroys the socket, so nothing is left waiting on it.
+ */
+async function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  idleTimeoutMs: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_resolve, reject) => {
+    idleTimer = setTimeout(
+      () => reject(new Error(`Upstream sent no data for ${idleTimeoutMs}ms`)),
+      idleTimeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([reader.read(), stalled]);
+  } finally {
+    clearTimeout(idleTimer);
+  }
+}
+
+export function createFetchProxyHandler(
+  options: { maxBytes?: number; headersTimeoutMs?: number; idleTimeoutMs?: number } = {},
+): RequestHandler {
   const maxBytes = options.maxBytes ?? MAX_PROXY_BYTES;
+  const headersTimeoutMs = options.headersTimeoutMs ?? HEADERS_TIMEOUT_MS;
+  const idleTimeoutMs = options.idleTimeoutMs ?? BODY_IDLE_TIMEOUT_MS;
 
   return async (req, res) => {
     const rawUrl = req.query.url;
@@ -31,12 +83,18 @@ export function createFetchProxyHandler(options: { maxBytes?: number } = {}): Re
       return;
     }
 
+    // Its own controller, cleared the moment the response resolves, so the signal is
+    // never live while the body is being read.
+    const headersController = new AbortController();
+    const headersTimer = setTimeout(() => headersController.abort(), headersTimeoutMs);
     let upstream: Response;
     try {
-      upstream = await fetch(target.toString(), { signal: AbortSignal.timeout(30_000) });
+      upstream = await fetch(target.toString(), { signal: headersController.signal });
     } catch {
       res.status(502).json({ error: 'Failed to fetch the requested URL' });
       return;
+    } finally {
+      clearTimeout(headersTimer);
     }
 
     if (!upstream.ok) {
@@ -67,7 +125,7 @@ export function createFetchProxyHandler(options: { maxBytes?: number } = {}): Re
     let received = 0;
     try {
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithIdleTimeout(reader, idleTimeoutMs);
         if (done) break;
 
         received += value.byteLength;
