@@ -34,6 +34,39 @@ async function makeTwoIconThemeZipFile(): Promise<File> {
 }
 
 /**
+ * Two variants of one icon *name* — the folder-wine case the gallery exists to expose.
+ * Both land in the same IconGroup, so both would be written as `folder-wine.info`.
+ */
+async function makeTwoVariantThemeZipFile(): Promise<File> {
+  const zip = new JSZip();
+  zip.file(
+    '48x48/apps/folder-wine.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#3355ff"/></svg>',
+  );
+  zip.file(
+    '48x48/places/folder-wine.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#eeeeee"/></svg>',
+  );
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return new File([blob], 'theme.zip', { type: 'application/zip' });
+}
+
+/** Two differently-named icons that both infer kind 'drawer' — so both can claim def_drawer. */
+async function makeTwoDrawerThemeZipFile(): Promise<File> {
+  const zip = new JSZip();
+  zip.file(
+    '48x48/places/folder.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#3355ff"/></svg>',
+  );
+  zip.file(
+    '48x48/places/folder-open.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#33ff55"/></svg>',
+  );
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return new File([blob], 'theme.zip', { type: 'application/zip' });
+}
+
+/**
  * The gallery renders one selection checkbox per icon tile, and each tile's accessible
  * name depends on its thumbnail having finished loading (async) — so querying by role
  * name alone is unreliable, and querying by role alone breaks the moment a second
@@ -47,6 +80,19 @@ function galleryCheckboxFor(groupName: string): HTMLElement {
   const row = screen.getByText(groupName, { selector: 'strong' }).closest('div');
   if (!row) throw new Error(`No row found for group "${groupName}"`);
   return within(row).getByRole('checkbox');
+}
+
+/**
+ * Picks one specific variant tile within a group's row, by the `<small>` caption
+ * IconTile renders ("<category> <size>"). `galleryCheckboxFor` above assumes the row
+ * holds exactly one checkbox, which stops being true the moment a group has siblings.
+ */
+function galleryVariantCheckbox(groupName: string, variantLabel: string): HTMLElement {
+  const row = screen.getByText(groupName, { selector: 'strong' }).closest('div');
+  if (!row) throw new Error(`No row found for group "${groupName}"`);
+  const tile = within(row).getByText(variantLabel, { selector: 'small' }).closest('label');
+  if (!tile) throw new Error(`No tile found for variant "${variantLabel}"`);
+  return within(tile).getByRole('checkbox');
 }
 
 describe('App end-to-end', () => {
@@ -156,5 +202,79 @@ describe('App end-to-end', () => {
     // It does eventually come back once the new debounced build under the new config
     // completes — the fix removes the stale flash, not the preview itself.
     await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+  });
+
+  it('replaces a previously selected sibling when another variant of the same icon is ticked', async () => {
+    render(<App />);
+
+    const file = await makeTwoVariantThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder-wine', { selector: 'strong' })).toBeInTheDocument());
+
+    const appsVariant = galleryVariantCheckbox('folder-wine', 'apps 48');
+    const placesVariant = galleryVariantCheckbox('folder-wine', 'places 48');
+
+    fireEvent.click(appsVariant);
+    expect(appsVariant).toBeChecked();
+
+    // Both variants share the name "folder-wine", so both would be written as
+    // folder-wine.info and the second would silently overwrite the first. Ticking the
+    // second must therefore replace the first rather than join it.
+    fireEvent.click(placesVariant);
+    expect(placesVariant).toBeChecked();
+    expect(appsVariant).not.toBeChecked();
+  });
+
+  it('writes exactly one .info per selected icon name', async () => {
+    vi.mocked(runConversionJob).mockClear();
+    render(<App />);
+
+    const file = await makeTwoVariantThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder-wine', { selector: 'strong' })).toBeInTheDocument());
+
+    fireEvent.click(galleryVariantCheckbox('folder-wine', 'apps 48'));
+    fireEvent.click(galleryVariantCheckbox('folder-wine', 'places 48'));
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    await waitFor(() => expect(screen.getByRole('link', { name: /download/i })).toBeInTheDocument(), {
+      timeout: 5000,
+    });
+
+    // The job is handed one input per surviving selection — the sibling that was
+    // replaced must never reach it. (Asserting only the zip's contents would pass
+    // vacuously: zipBuilder writes `${name}.info`, so a second sibling would simply
+    // overwrite the first and the count would still be one. That silent overwrite is
+    // exactly the bug.)
+    const [, inputs] = vi.mocked(runConversionJob).mock.calls.at(-1)!;
+    expect(inputs.map((input) => input.icon.zipPath)).toEqual(['48x48/places/folder-wine.svg']);
+
+    const blob = (await vi.mocked(runConversionJob).mock.results.at(-1)!.value) as Blob;
+    const parsed = await JSZip.loadAsync(await blob.arrayBuffer());
+    const infoNames = Object.keys(parsed.files).filter((name) => name.endsWith('.info'));
+    expect(infoNames).toEqual(['folder-wine.info']);
+  });
+
+  it('refuses to convert when two icons claim the same system default role', async () => {
+    vi.mocked(runConversionJob).mockClear();
+    render(<App />);
+
+    const file = await makeTwoDrawerThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    fireEvent.click(galleryCheckboxFor('folder-open'));
+    fireEvent.click(await screen.findByLabelText(/system default for folder$/i));
+    fireEvent.click(await screen.findByLabelText(/system default for folder-open/i));
+
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/drawer/i);
+    expect(alert).toHaveTextContent(/folder/);
+    expect(alert).toHaveTextContent(/folder-open/);
+    expect(runConversionJob).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
   });
 });

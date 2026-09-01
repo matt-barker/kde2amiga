@@ -2,13 +2,9 @@ import { useEffect, useRef } from 'react';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconKind } from '../lib/newicons/diskObject';
 import type { DefaultIconRole } from '../lib/output/zipBuilder';
+import { defaultAssignment, type IconAssignment } from '../lib/theme/assignment';
 import type { IconPreview } from '../lib/pipeline/preview';
 import { WORKBENCH_GREY } from './IconTile';
-
-export interface IconAssignment {
-  kind: IconKind;
-  role?: DefaultIconRole;
-}
 
 const KINDS: IconKind[] = ['drawer', 'project', 'tool', 'disk', 'trashcan'];
 
@@ -54,7 +50,7 @@ export function SelectedIconList(props: {
   return (
     <ul>
       {variants.map((variant) => {
-        const assignment = assignments.get(variant.zipPath) ?? { kind: 'project' as IconKind };
+        const assignment = assignments.get(variant.zipPath) ?? defaultAssignment(variant);
         const kindId = `kind-${variant.zipPath}`;
         const roleId = `role-${variant.zipPath}`;
         const preview = previews?.get(variant.zipPath);
@@ -97,7 +93,9 @@ export function SelectedIconList(props: {
               checked={assignment.role !== undefined}
               onChange={(event) =>
                 onAssignmentChange(variant.zipPath, {
-                  kind: assignment.kind,
+                  // Spread, like the kind handler above: rebuilding the object field by
+                  // field would silently drop any third field added to IconAssignment later.
+                  ...assignment,
                   role: event.target.checked ? ROLE_FOR_KIND[assignment.kind] : undefined,
                 })
               }

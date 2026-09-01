@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import { SelectedIconList, type IconAssignment } from './SelectedIconList';
+import { SelectedIconList } from './SelectedIconList';
+import type { IconAssignment } from '../lib/theme/assignment';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconPreview } from '../lib/pipeline/preview';
 
