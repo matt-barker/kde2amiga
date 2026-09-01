@@ -5,3 +5,7 @@ dist/
 # Local planning/spec docs and agent scratch state
 docs/superpowers/
 .superpowers/
+
+# Amiberry captures and hardware-test screenshots: local verification evidence,
+# not part of the build.
+Screenshots/
