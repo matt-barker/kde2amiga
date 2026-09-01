@@ -4,6 +4,25 @@ import { encodeNewIconState, type NewIconState } from './newIconsEncoder';
 
 export type IconKind = 'disk' | 'drawer' | 'tool' | 'project' | 'trashcan';
 
+/**
+ * The two ToolType entries that must precede the IM1=/IM2= lines.
+ *
+ * Not decoration: without them AmigaOS does not recognise the ToolTypes as NewIcons data
+ * at all. Workbench then draws the classic planar fallback (see `classicImage.ts`) and
+ * lists the IM1=/IM2= lines verbatim in the Icon Information window.
+ *
+ * Verified on real hardware — A1200 / OS 3.2.2, icon.library 47.5 — by rendering two
+ * files that differed in nothing but these entries: without them a plain box, with them
+ * the full-colour NewIcons image. Both vendored real-world fixtures carry them as their
+ * first two ToolTypes (see `newIconsFixtures.test.ts`), and icon.library 47.5's own
+ * string table contains this exact marker alongside its "IM1=" and "IM2=" literals.
+ *
+ * Note that third-party NewIcons *decoders* (steffest/Amiga-Icon-converter, ImageMagick's
+ * wbinfo coder) match on the "IM1="/"IM2=" prefix alone and ignore the marker, so a
+ * round-trip through them cannot catch its absence. AmigaOS itself is stricter.
+ */
+const NEWICONS_PREAMBLE = [' ', "*** DON'T EDIT THE FOLLOWING LINES!! ***"];
+
 const ICON_TYPE_CODES: Record<IconKind, number> = {
   disk: 1,
   drawer: 2,
@@ -24,6 +43,7 @@ export function buildInfoFile(params: {
   const isDrawerLike = kind === 'drawer' || kind === 'trashcan';
 
   const toolTypes = [
+    ...NEWICONS_PREAMBLE,
     ...encodeNewIconState(normal, 'IM1='),
     ...encodeNewIconState(selected, 'IM2='),
   ];

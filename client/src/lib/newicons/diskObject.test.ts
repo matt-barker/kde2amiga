@@ -112,4 +112,24 @@ describe('buildInfoFile', () => {
     expect(decoded.selected.palette).toEqual(selected.palette);
     expect(decoded.selected.pixels).toEqual(selected.pixels);
   });
+  // Verified on real hardware (A1200 / OS 3.2.2, icon.library 47.5): an icon whose
+  // ToolTypes carry only the IM1=/IM2= lines renders as the plain classic fallback and
+  // its NewIcons data is shown verbatim in the Icon Information window. Adding exactly
+  // these two leading entries -- and changing nothing else -- makes Workbench decode and
+  // draw the NewIcons image. See newIconsFixtures.test.ts for the same two entries in
+  // the real, in-the-wild fixtures.
+  it('precedes the IM1=/IM2= lines with the NewIcons preamble ToolTypes', () => {
+    const bytes = buildInfoFile({
+      width: 4,
+      height: 4,
+      kind: 'project',
+      normal: makeState(4, 4),
+      selected: makeState(4, 4),
+    });
+    const decoded = decodeInfoFileForTest(bytes);
+
+    expect(decoded.toolTypes[0]).toBe(' ');
+    expect(decoded.toolTypes[1]).toBe("*** DON'T EDIT THE FOLLOWING LINES!! ***");
+    expect(decoded.toolTypes[2].startsWith('IM1=')).toBe(true);
+  });
 });

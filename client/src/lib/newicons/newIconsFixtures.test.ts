@@ -110,4 +110,14 @@ describe('real NewIcons fixtures', () => {
     expect(decodeBitsForTest(palettePayload).length).toBe(224);
     expect(palettePayload.split('').some((c) => c.charCodeAt(0) > 208)).toBe(true);
   });
+  // Both real files begin their ToolTypes with these two entries, before any IM1= line.
+  // Our writer omitted them, and on real hardware (OS 3.2.2, icon.library 47.5) that is
+  // the single difference that stops Workbench decoding the NewIcons image at all.
+  it.each(['Apps.info', '0016.info'])('%s begins its ToolTypes with the NewIcons preamble', (name) => {
+    const icon = decodeInfoFileForTest(loadFixture(name));
+
+    expect(icon.toolTypes[0]).toBe(' ');
+    expect(icon.toolTypes[1]).toBe("*** DON'T EDIT THE FOLLOWING LINES!! ***");
+    expect(icon.toolTypes[2].startsWith('IM1=')).toBe(true);
+  });
 });
