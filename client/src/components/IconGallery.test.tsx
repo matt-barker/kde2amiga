@@ -78,4 +78,39 @@ describe('IconGallery', () => {
     // Virtualized: far fewer rows in the DOM than groups in the theme.
     expect(screen.getAllByRole('checkbox').length).toBeLessThan(200);
   });
+
+  it('keeps showing filtered results after scrolling deep into the unfiltered list', () => {
+    // 5000 generic groups, plus one distinctively-named group at the end that a
+    // search can isolate down to a single match.
+    const many: IconGroup[] = Array.from({ length: 5000 }, (_, i) => ({
+      name: `icon-${i}`,
+      variants: [
+        { name: `icon-${i}`, category: 'apps', sizePx: 48, format: 'svg', zipPath: `a/apps/48/icon-${i}.svg` },
+      ],
+    }));
+    many.push({
+      name: 'special-target',
+      variants: [
+        { name: 'special-target', category: 'apps', sizePx: 48, format: 'svg', zipPath: 'a/apps/48/special-target.svg' },
+      ],
+    });
+
+    const { container } = render(
+      <IconGallery zip={zipFor([])} groups={many} selected={new Set()} onSelectionChange={() => {}} />,
+    );
+
+    // Scroll well past the top of the unfiltered 5001-row list (row height 96px,
+    // matching IconGallery's ROW_HEIGHT constant), so the window's start index sits
+    // deep in the list before the search below shrinks `matches` out from under it.
+    const scrollContainer = container.querySelector<HTMLElement>('div[style*="overflow-y"]');
+    expect(scrollContainer).not.toBeNull();
+    fireEvent.scroll(scrollContainer!, { target: { scrollTop: 3000 * 96 } });
+
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'special' } });
+
+    // Without clamping the window's start index to the filtered list's length, the
+    // window would still point at index ~2996 of a 1-item `matches` array and render
+    // nothing here, even though the filtered result exists.
+    expect(screen.getByText('special-target')).toBeInTheDocument();
+  });
 });
