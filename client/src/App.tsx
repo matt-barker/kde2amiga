@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type JSZip from 'jszip';
 import { ThemeLoader } from './components/ThemeLoader';
 import { IconGallery } from './components/IconGallery';
@@ -7,8 +7,12 @@ import { SelectedIconList, type IconAssignment } from './components/SelectedIcon
 import type { IconGroup, IconVariant } from './lib/theme/themeParser';
 import { inferIconKind } from './lib/theme/iconKind';
 import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
+import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
 
 const DEFAULT_CONFIG: JobConfig = { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' };
+
+// A single shared instance so it doesn't cause a fresh Map identity every render.
+const EMPTY_PREVIEWS: Map<string, IconPreview> = new Map();
 
 export default function App() {
   const [zip, setZip] = useState<JSZip | null>(null);
@@ -25,6 +29,34 @@ export default function App() {
     () => groups.flatMap((g) => g.variants).filter((v) => selected.has(v.zipPath)),
     [groups, selected],
   );
+
+  const [previews, setPreviews] = useState<Map<string, IconPreview>>(new Map());
+  // Derived rather than set from the effect below: when there's nothing selected the
+  // previews are empty by definition, so there's no async work to synchronize and no
+  // need to route it through setState-in-effect (a react(set-state-in-effect) lint
+  // advisory this plan deliberately keeps out).
+  const visiblePreviews = zip && selectedVariants.length > 0 ? previews : EMPTY_PREVIEWS;
+
+  // Debounced: the shared palette makes every preview depend on the whole selection,
+  // so each change invalidates all of them. Recomputing on every keystroke-fast
+  // selection change would be wasteful.
+  useEffect(() => {
+    if (!zip || selectedVariants.length === 0) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      buildPreviews(zip, selectedVariants, config)
+        .then((built) => {
+          if (cancelled) return;
+          setPreviews(new Map(built.map((p) => [p.zipPath, p])));
+        })
+        .catch((err) => console.warn('Preview build failed:', err));
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [zip, selectedVariants, config]);
 
   // Looked up by zipPath rather than re-flattening `groups` on every selection change —
   // themes can hold hundreds of thousands of variants (see IconGallery's windowing note).
@@ -111,6 +143,7 @@ export default function App() {
             onAssignmentChange={(zipPath, assignment) =>
               setAssignments((current) => new Map(current).set(zipPath, assignment))
             }
+            previews={visiblePreviews}
           />
           <JobConfigForm config={config} onChange={setConfig} />
           <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
