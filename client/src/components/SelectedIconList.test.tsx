@@ -22,7 +22,7 @@ describe('SelectedIconList', () => {
       [readme.zipPath, { kind: 'project' }],
     ]);
     render(
-      <SelectedIconList variants={[folder, readme]} assignments={assignments} onAssignmentChange={() => {}} />,
+      <SelectedIconList variants={[folder, readme]} assignments={assignments} onAssignmentChange={() => {}} onRemove={() => {}} />,
     );
 
     expect(screen.getByLabelText(/type for folder/i)).toHaveValue('drawer');
@@ -33,7 +33,7 @@ describe('SelectedIconList', () => {
     const onAssignmentChange = vi.fn();
     const assignments = new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]]);
     render(
-      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={onAssignmentChange} />,
+      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={onAssignmentChange} onRemove={() => {}} />,
     );
 
     fireEvent.change(screen.getByLabelText(/type for folder/i), { target: { value: 'trashcan' } });
@@ -45,7 +45,7 @@ describe('SelectedIconList', () => {
     const onAssignmentChange = vi.fn();
     const assignments = new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]]);
     render(
-      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={onAssignmentChange} />,
+      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={onAssignmentChange} onRemove={() => {}} />,
     );
 
     // The label names the slot the icon fills, not the icon — but the accessible name
@@ -61,7 +61,7 @@ describe('SelectedIconList', () => {
       [readme.zipPath, { kind: 'project' }],
     ]);
     render(
-      <SelectedIconList variants={[folder, readme]} assignments={assignments} onAssignmentChange={() => {}} />,
+      <SelectedIconList variants={[folder, readme]} assignments={assignments} onAssignmentChange={() => {}} onRemove={() => {}} />,
     );
 
     // There are five system-default slots and one icon fills each, so the label has to
@@ -74,7 +74,7 @@ describe('SelectedIconList', () => {
   it('moves the slot label when the type changes', () => {
     const assignments = new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]]);
     const { rerender } = render(
-      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={() => {}} />,
+      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={() => {}} onRemove={() => {}} />,
     );
     expect(screen.getByText('def_drawer')).toBeInTheDocument();
 
@@ -82,7 +82,7 @@ describe('SelectedIconList', () => {
       <SelectedIconList
         variants={[folder]}
         assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'disk', role: 'disk' }]])}
-        onAssignmentChange={() => {}}
+        onAssignmentChange={() => {}} onRemove={() => {}}
       />,
     );
 
@@ -107,7 +107,7 @@ describe('SelectedIconList', () => {
       <SelectedIconList
         variants={[folder]}
         assignments={assignments}
-        onAssignmentChange={() => {}}
+        onAssignmentChange={() => {}} onRemove={() => {}}
         previews={new Map([[folder.zipPath, preview]])}
       />,
     );
@@ -131,5 +131,38 @@ describe('SelectedIconList', () => {
     // JobConfig's backgroundColor default is [0xab, 0xab, 0xab]; a preview drawn on a
     // different grey shows a fringe the Amiga will not.
     expect(WORKBENCH_GREY.toLowerCase()).toBe('#ababab');
+  });
+});
+
+describe('removing a row', () => {
+  it('offers a remove button naming the icon it drops', () => {
+    render(
+      <SelectedIconList
+        variants={[folder, readme]}
+        assignments={new Map()}
+        onAssignmentChange={() => {}}
+        onRemove={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /remove folder/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /remove text-x-generic/i })).toBeInTheDocument();
+  });
+
+  it('reports the zip path of the row whose button was pressed', () => {
+    // The zipPath, not the name: two rows can share a name across categories, and the
+    // selection App holds is keyed by path.
+    const onRemove = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[folder, readme]}
+        assignments={new Map()}
+        onAssignmentChange={() => {}}
+        onRemove={onRemove}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /remove text-x-generic/i }));
+    expect(onRemove).toHaveBeenCalledWith(readme.zipPath);
   });
 });

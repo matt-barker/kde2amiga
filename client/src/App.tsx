@@ -133,6 +133,14 @@ export default function App() {
    * the previous one's exact paths, and without it an identical selection in a different
    * theme would produce an identical signature and show the old theme's pictures.
    *
+   * The whole config goes in rather than a hand-picked list of its fields. The list was
+   * the thing that could rot, and did: `backgroundColor` was added to JobConfig and never
+   * added here, so changing the colour edges are baked against left the previous batch's
+   * pictures on screen until the rebuild landed. Stringifying the object cannot forget a
+   * field. Two configs never collide; at worst a differing key order costs one rebuild,
+   * which fails in the safe direction — towards showing nothing rather than the wrong
+   * thing.
+   *
    * The selection goes in *in order*, not sorted. `buildSharedPalette` concatenates the
    * batch's pixels in the order it is handed them and median-cuts the result, so the same
    * set of icons in a different order is not guaranteed to yield the same palette. A
@@ -143,14 +151,7 @@ export default function App() {
    */
   const previewSignature = useMemo(
     () =>
-      JSON.stringify([
-        themeSerial,
-        config.outputSizePx,
-        config.maxColors,
-        config.selectedEffect,
-        config.tintColor ?? null,
-        Array.from(selected),
-      ]),
+      JSON.stringify([themeSerial, config, Array.from(selected)]),
     [themeSerial, config, selected],
   );
 
@@ -211,6 +212,16 @@ export default function App() {
       }
       return changed ? next : current;
     });
+  }
+
+  // Removal goes through the same handler a gallery tick does, so the one-variant-per-name
+  // rule and the assignment seeding stay on a single path. The row's assignment is left
+  // behind deliberately: re-adding the icon then restores the type the user had chosen
+  // for it rather than starting over from the inferred default.
+  function handleRemove(zipPath: string) {
+    const next = new Set(selected);
+    next.delete(zipPath);
+    handleSelectionChange(next);
   }
 
   function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
@@ -279,6 +290,7 @@ export default function App() {
             onAssignmentChange={(zipPath, assignment) =>
               setAssignments((current) => new Map(current).set(zipPath, assignment))
             }
+            onRemove={handleRemove}
             previews={visiblePreviews}
           />
           <JobConfigForm

@@ -197,3 +197,71 @@ describe('ThemeLoader', () => {
     fetchSpy.mockRestore();
   });
 });
+
+/*
+ * Unpacking a theme is slow — hundreds of thousands of entries for a full KDE set — and
+ * until it lands the page looks like nothing happened. The overlay says otherwise, and
+ * has to be up *while* the work runs rather than after it.
+ */
+describe('while a theme is being read', () => {
+  it('shows a status overlay as soon as a file is chosen', async () => {
+    const onThemeLoaded = vi.fn();
+    render(<ThemeLoader onThemeLoaded={onThemeLoaded} />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+
+    expect(screen.getByRole('status')).toHaveTextContent(/reading theme/i);
+    await waitFor(() => expect(onThemeLoaded).toHaveBeenCalledTimes(1));
+  });
+
+  it('takes the overlay down once the theme has loaded', async () => {
+    const onThemeLoaded = vi.fn();
+    render(<ThemeLoader onThemeLoaded={onThemeLoaded} />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+
+    await waitFor(() => expect(onThemeLoaded).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
+  it('takes the overlay down when the archive turns out to be unreadable', async () => {
+    // The failure path is exactly where a stuck overlay would trap the user: the error
+    // is right there behind it, and nothing more is coming.
+    render(<ThemeLoader onThemeLoaded={vi.fn()} />);
+
+    const badFile = new File(['not a zip'], 'theme.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [badFile] } });
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('shows the overlay for a URL fetch too', async () => {
+    const zip = new JSZip();
+    zip.file('scalable/places/folder.svg', '<svg></svg>');
+    const arrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new Uint8Array(arrayBuffer));
+          c.close();
+        },
+      }),
+    } as Response);
+
+    const onThemeLoaded = vi.fn();
+    render(<ThemeLoader onThemeLoaded={onThemeLoaded} />);
+
+    fireEvent.change(screen.getByLabelText(/fetch from a url/i), { target: { value: 'https://example.com/theme.zip' } });
+    fireEvent.click(screen.getByRole('button', { name: /fetch/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/reading theme/i);
+    await waitFor(() => expect(onThemeLoaded).toHaveBeenCalledTimes(1));
+
+    fetchSpy.mockRestore();
+  });
+});

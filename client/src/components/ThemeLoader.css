@@ -1,0 +1,144 @@
+/*
+ * Two stacked fields, each with its label above its control.
+ *
+ * Laid out inline with no styling at all, the whole loader ran together as one line —
+ * "Upload a theme zip, tar.gz or tar.xz [Choose file] Or fetch from a URL [____] Fetch"
+ * — which read as a single sentence and gave no clue that these are two separate ways in.
+ */
+.loader {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 20px 20px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.loader__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loader__field label {
+  color: var(--text-h);
+}
+
+.loader__url {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.loader__url input {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.loader input {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.loader input[type='file'] {
+  padding: 5px;
+}
+
+.loader input:focus-visible,
+.loader button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.loader button {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 16px;
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+}
+
+.loader button:disabled,
+.loader input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.loader__error {
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.12);
+  border: 1px solid rgba(179, 38, 30, 0.4);
+}
+
+/*
+ * The reading-a-theme modal. Fixed to the viewport rather than the loader, because the
+ * gallery below it is the part that must not be touched while a new theme replaces it.
+ */
+.loader__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.loader__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 260px;
+  padding: 28px 32px;
+  text-align: center;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.loader__hint {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.loader__spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: loader-spin 0.8s linear infinite;
+}
+
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A silently spinning ring is motion for its own sake; leave a static one for anyone
+   who has asked the system for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  .loader__spinner {
+    animation: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .loader__error {
+    color: #ffb4ab;
+  }
+}

@@ -140,3 +140,42 @@
   white-space: nowrap;
   border: 0;
 }
+
+/*
+ * The remove column sits at the end of the row, narrow and out of the way: it is an
+ * escape hatch, not a primary action, so it stays quiet until the pointer is on it.
+ */
+.selected__remove {
+  width: 1%;
+  text-align: right;
+}
+
+.selected__remove button {
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.selected__remove button:hover {
+  color: #b3261e;
+  border-color: var(--border);
+}
+
+.selected__remove button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .selected__remove button:hover {
+    color: #ffb4ab;
+  }
+}

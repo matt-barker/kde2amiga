@@ -207,7 +207,7 @@ describe('App end-to-end', () => {
 
     // Change the job config while nothing is selected — reachable because JobConfigForm
     // is always rendered regardless of selection.
-    fireEvent.change(screen.getByLabelText(/max colors/i), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText(/max colours/i), { target: { value: '4' } });
 
     // Reselect the same icon. The old preview was built under the pre-change config, so
     // it must not reappear — not even for the width of the debounce window. Showing it
@@ -340,5 +340,61 @@ describe('App end-to-end', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe('removing a selected icon', () => {
+  it('drops the row and unticks it back in the gallery', async () => {
+    render(<App />);
+
+    const file = await makeTwoIconThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    fireEvent.click(galleryCheckboxFor('text-x-generic'));
+    expect(screen.getByText(/selected icons \(2\)/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /remove folder/i }));
+
+    expect(screen.getByText(/selected icons \(1\)/i)).toBeInTheDocument();
+    // The gallery is the other view of the same selection: leaving its tick behind would
+    // make the icon look selected while the conversion no longer includes it.
+    expect(galleryCheckboxFor('folder')).not.toBeChecked();
+    expect(galleryCheckboxFor('text-x-generic')).toBeChecked();
+  });
+
+  it('leaves nothing to convert once the last row is removed', async () => {
+    render(<App />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    fireEvent.click(screen.getByRole('button', { name: /remove folder/i }));
+
+    expect(screen.getByRole('button', { name: /convert/i })).toBeDisabled();
+  });
+});
+
+describe('preview invalidation', () => {
+  it('drops the existing previews the instant the background colour changes', async () => {
+    // Soft edges are baked against this colour, so changing it changes every pixel of
+    // every preview — showing the old ones through the debounce window is showing
+    // pictures the conversion will not produce.
+    render(<App />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+
+    fireEvent.change(screen.getByLabelText(/background colour/i), { target: { value: '#ff0000' } });
+    expect(screen.queryByLabelText(/normal state for folder/i)).not.toBeInTheDocument();
+
+    await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
   });
 });

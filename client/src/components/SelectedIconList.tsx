@@ -44,9 +44,10 @@ export function SelectedIconList(props: {
   variants: IconVariant[];
   assignments: Map<string, IconAssignment>;
   onAssignmentChange: (zipPath: string, assignment: IconAssignment) => void;
+  onRemove: (zipPath: string) => void;
   previews?: Map<string, IconPreview>;
 }) {
-  const { variants, assignments, onAssignmentChange, previews } = props;
+  const { variants, assignments, onAssignmentChange, onRemove, previews } = props;
 
   if (variants.length === 0) return null;
 
@@ -61,6 +62,11 @@ export function SelectedIconList(props: {
             <th scope="col">Icon</th>
             <th scope="col">Type</th>
             <th scope="col">System default</th>
+            {/*
+              The column exists for layout, but its heading would only ever read
+              "Remove" above a row of identical crosses — the buttons name themselves.
+            */}
+            <th scope="col"><span className="visually-hidden">Remove</span></th>
           </tr>
         </thead>
         <tbody>
@@ -156,6 +162,20 @@ export function SelectedIconList(props: {
                   <label htmlFor={roleId} aria-hidden="true">
                     {`def_${role}`}
                   </label>
+                </td>
+
+                <td className="selected__remove">
+                  <button
+                    type="button"
+                    /*
+                      The cross is decoration; the accessible name has to say which icon
+                      goes, since twenty rows of "Remove" identify nothing.
+                    */
+                    aria-label={`Remove ${variant.name}`}
+                    onClick={() => onRemove(variant.zipPath)}
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
                 </td>
               </tr>
             );
