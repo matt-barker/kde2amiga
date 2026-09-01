@@ -16,9 +16,9 @@ function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   });
 }
 
-function appWithProxy() {
+function appWithProxy(options?: { maxBytes?: number }) {
   const app = express();
-  app.get('/api/fetch-url', createFetchProxyHandler());
+  app.get('/api/fetch-url', createFetchProxyHandler(options));
   return app;
 }
 
@@ -83,28 +83,53 @@ describe('createFetchProxyHandler', () => {
       }),
     );
 
-    const res = await request(appWithProxy()).get(
+    const res = await request(appWithProxy({ maxBytes: 1024 })).get(
       '/api/fetch-url?url=' + encodeURIComponent('https://example.com/huge.zip'),
     );
     expect(res.status).toBe(413);
   });
 
-  it('returns 413 when the body exceeds the cap despite a missing content-length', async () => {
-    const tenMegabytes = new Uint8Array(10 * 1024 * 1024);
+  // The body is streamed straight through to the client rather than buffered, so by the
+  // time an over-cap chunked response is detected the 200 headers have already gone out
+  // and a 413 is no longer expressible. The connection is destroyed instead, which is what
+  // the client sees as a failed download. Well-behaved servers send content-length and get
+  // the clean 413 above; this path is the safety net for chunked responses.
+  it('aborts the connection when a chunked body exceeds the cap', async () => {
+    const chunk = new Uint8Array(1024);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ 'content-type': 'application/zip' }), // deliberately no content-length
-        body: streamOf(...Array(11).fill(tenMegabytes)),
+        body: streamOf(...Array(8).fill(chunk)),
+      }),
+    );
+
+    await expect(
+      request(appWithProxy({ maxBytes: 4 * 1024 })).get(
+        '/api/fetch-url?url=' + encodeURIComponent('https://example.com/huge.zip'),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('streams a body larger than the old 100MB cap when under the configured cap', async () => {
+    const oneMegabyte = new Uint8Array(1024 * 1024);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/zip' }),
+        body: streamOf(...Array(120).fill(oneMegabyte)),
       }),
     );
 
     const res = await request(appWithProxy()).get(
-      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/huge.zip'),
+      '/api/fetch-url?url=' + encodeURIComponent('https://example.com/uniform.tar.xz'),
     );
-    expect(res.status).toBe(413);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(120 * 1024 * 1024);
   });
 
   it('returns 502 when the upstream fetch fails', async () => {
