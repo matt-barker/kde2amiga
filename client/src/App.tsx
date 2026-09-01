@@ -89,6 +89,13 @@ export default function App() {
       }
       return changed ? next : current;
     });
+    // The preview-build effect only runs (and replaces `previews`) while the selection
+    // is non-empty — see its early return above. Left uncleared here, a stale entry
+    // built under a now-superseded config could survive a deselect and be shown again,
+    // wrongly, the instant its zipPath is reselected, for as long as the next debounce
+    // takes to resolve. Clearing it here, in the callback that owns this transition,
+    // keeps that impossible without routing state-setting through the effect.
+    if (nextSelected.size === 0) setPreviews(new Map());
   }
 
   function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
@@ -98,6 +105,11 @@ export default function App() {
     // zipPaths are archive-relative, so a new theme can reuse the exact paths of the
     // last one — carrying assignments forward would silently mislabel a different icon.
     setAssignments(new Map());
+    // Same reasoning as handleSelectionChange: a new theme resets selection to empty
+    // directly (not via that handler), so it must clear stale previews itself too —
+    // otherwise a reused zipPath in the new theme could momentarily show the old
+    // theme's preview image.
+    setPreviews(new Map());
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setDownloadUrl(null);
     setError(null);
@@ -145,7 +157,17 @@ export default function App() {
             }
             previews={visiblePreviews}
           />
-          <JobConfigForm config={config} onChange={setConfig} />
+          <JobConfigForm
+            config={config}
+            onChange={(next) => {
+              setConfig(next);
+              // Every cached preview was built under the old config's palette/effect,
+              // so all of them are invalid the instant config changes — regardless of
+              // whether anything is currently selected. Cleared here, at the source of
+              // the change, rather than in the build effect (see handleSelectionChange).
+              setPreviews(new Map());
+            }}
+          />
           <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
             {converting ? 'Converting…' : 'Convert'}
           </button>
