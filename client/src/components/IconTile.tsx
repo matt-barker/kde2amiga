@@ -3,7 +3,14 @@ import type JSZip from 'jszip';
 import type { IconVariant } from '../lib/theme/themeParser';
 
 /** Sampled from a real Workbench screenshot: colour 0 of the standard palette. */
-export const WORKBENCH_GREY = '#AAAAAA';
+/**
+ * The standard AmigaOS Workbench grey, sampled from a 3.2.3 screenshot.
+ *
+ * Must stay equal to `JobConfig.backgroundColor`'s default: conversion bakes soft edges
+ * against that colour, so a preview grounded on any other grey shows a fringe the Amiga
+ * will not.
+ */
+export const WORKBENCH_GREY = '#ABABAB';
 
 const MIME: Record<IconVariant['format'], string> = {
   svg: 'image/svg+xml',
@@ -17,8 +24,14 @@ export function IconTile(props: {
   variant: IconVariant;
   checked: boolean;
   onToggle: (zipPath: string) => void;
+  /**
+   * Renders the icon's name between the preview and the category/size caption. On by
+   * default nowhere: the gallery grid needs it (a card is identified by its name), the
+   * variant picker does not (every tile in it shares one name, already in the heading).
+   */
+  showName?: boolean;
 }) {
-  const { zip, variant, checked, onToggle } = props;
+  const { zip, variant, checked, onToggle, showName = false } = props;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
 
   // JSZip's `file()` lookup is synchronous (it's an in-memory index, not I/O), so a
@@ -69,9 +82,9 @@ export function IconTile(props: {
       : { status: 'loading' };
 
   return (
-    <label>
-      <input type="checkbox" checked={checked} onChange={() => onToggle(variant.zipPath)} />
-      <span style={{ backgroundColor: WORKBENCH_GREY, display: 'inline-block', padding: 4 }}>
+    <label className="icon-tile">
+      <input className="icon-tile__check" type="checkbox" checked={checked} onChange={() => onToggle(variant.zipPath)} />
+      <span className="icon-tile__swatch" style={{ backgroundColor: WORKBENCH_GREY }}>
         {state.status === 'ok' && (
           <img
             src={state.src}
@@ -90,12 +103,15 @@ export function IconTile(props: {
           <span role="status">{`${variant.name} failed to load`}</span>
         )}
       </span>
+      {showName && <span className="icon-tile__name">{variant.name}</span>}
       {/*
         `sizePx` is 0 for a scalable SVG, so a raw render reads "places 0" — and this is
         the label the user picks a variant by, which makes a meaningless number actively
         misleading rather than merely untidy.
       */}
-      <small>{`${variant.category} ${variant.sizePx === 0 ? 'scalable' : variant.sizePx}`}</small>
+      <small className="icon-tile__meta">
+        {`${variant.category} ${variant.sizePx === 0 ? 'scalable' : variant.sizePx}`}
+      </small>
     </label>
   );
 }

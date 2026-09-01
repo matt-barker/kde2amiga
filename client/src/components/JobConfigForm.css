@@ -1,0 +1,48 @@
+/*
+ * A label/control row that wraps as a unit. Laid out inline with no styling, the three
+ * labels ran straight into the controls of the field before them ("Max colors16
+ * Selected-state effect"), which read as one continuous sentence.
+ */
+.config {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding: 14px 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  font-size: 14px;
+}
+
+.config label {
+  color: var(--text-h);
+}
+
+.config input,
+.config select {
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.config input[type='number'] {
+  width: 5.5em;
+}
+
+.config input:focus-visible,
+.config select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Keeps a label bound to its own control when the row wraps. */
+.config__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

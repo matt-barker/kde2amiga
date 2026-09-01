@@ -76,27 +76,37 @@ async function makeTwoDrawerThemeZipFile(): Promise<File> {
  * The gallery renders one selection checkbox per icon tile, and each tile's accessible
  * name depends on its thumbnail having finished loading (async) — so querying by role
  * name alone is unreliable, and querying by role alone breaks the moment a second
- * checkbox (e.g. SelectedIconList's "system default" toggle) exists anywhere on the
+ * checkbox (e.g. SelectedIconList's default-slot toggle) exists anywhere on the
  * page. Scoping to the row that renders the group's name sidesteps both problems.
  */
-function galleryCheckboxFor(groupName: string): HTMLElement {
-  // Scoped to the `<strong>` IconGallery renders the group name in — plain
+function galleryCard(groupName: string): HTMLElement {
+  // Scoped to the name element IconTile renders inside a gallery card — plain
   // `getByText(groupName)` becomes ambiguous once the same icon is also selected,
   // because SelectedIconList echoes its name in a `<span>` of its own.
-  const row = screen.getByText(groupName, { selector: 'strong' }).closest('div');
-  if (!row) throw new Error(`No row found for group "${groupName}"`);
-  return within(row).getByRole('checkbox');
+  const card = screen.getByText(groupName, { selector: '.icon-tile__name' }).closest('.gallery__card');
+  if (!card) throw new Error(`No card found for group "${groupName}"`);
+  return card as HTMLElement;
+}
+
+function galleryCheckboxFor(groupName: string): HTMLElement {
+  return within(galleryCard(groupName)).getByRole('checkbox');
 }
 
 /**
- * Picks one specific variant tile within a group's row, by the `<small>` caption
- * IconTile renders ("<category> <size>"). `galleryCheckboxFor` above assumes the row
- * holds exactly one checkbox, which stops being true the moment a group has siblings.
+ * Picks one specific variant of a group, by the `<small>` caption IconTile renders
+ * ("<category> <size>").
+ *
+ * The gallery now shows one card per icon set — its best variant — so the siblings are
+ * only reachable through the card's variant picker. This opens that picker (a no-op if
+ * it is already open for this group) and finds the tile inside it, which is the same
+ * path a user takes.
  */
 function galleryVariantCheckbox(groupName: string, variantLabel: string): HTMLElement {
-  const row = screen.getByText(groupName, { selector: 'strong' }).closest('div');
-  if (!row) throw new Error(`No row found for group "${groupName}"`);
-  const tile = within(row).getByText(variantLabel, { selector: 'small' }).closest('label');
+  const trigger = within(galleryCard(groupName)).queryByRole('button', { name: /variants$/ });
+  if (trigger) fireEvent.click(trigger);
+
+  const picker = screen.getByRole('dialog', { name: new RegExp(groupName) });
+  const tile = within(picker).getByText(variantLabel, { selector: 'small' }).closest('label');
   if (!tile) throw new Error(`No tile found for variant "${variantLabel}"`);
   return within(tile).getByRole('checkbox');
 }
@@ -215,7 +225,7 @@ describe('App end-to-end', () => {
 
     const file = await makeTwoVariantThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByText('folder-wine', { selector: 'strong' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder-wine', { selector: '.icon-tile__name' })).toBeInTheDocument());
 
     const appsVariant = galleryVariantCheckbox('folder-wine', 'apps 48');
     const placesVariant = galleryVariantCheckbox('folder-wine', 'places 48');
@@ -237,7 +247,7 @@ describe('App end-to-end', () => {
 
     const file = await makeTwoVariantThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByText('folder-wine', { selector: 'strong' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder-wine', { selector: '.icon-tile__name' })).toBeInTheDocument());
 
     fireEvent.click(galleryVariantCheckbox('folder-wine', 'apps 48'));
     fireEvent.click(galleryVariantCheckbox('folder-wine', 'places 48'));
@@ -267,12 +277,12 @@ describe('App end-to-end', () => {
 
     const file = await makeTwoDrawerThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
 
     fireEvent.click(galleryCheckboxFor('folder'));
     fireEvent.click(galleryCheckboxFor('folder-open'));
-    fireEvent.click(await screen.findByLabelText(/system default for folder$/i));
-    fireEvent.click(await screen.findByLabelText(/system default for folder-open/i));
+    fireEvent.click(await screen.findByLabelText(/use folder as the system default/i));
+    fireEvent.click(await screen.findByLabelText(/use folder-open as the system default/i));
 
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
@@ -289,7 +299,7 @@ describe('App end-to-end', () => {
 
     const file = await makeTwoIconThemeZipFile();
     fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
 
     fireEvent.click(galleryCheckboxFor('folder'));
     await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
@@ -313,7 +323,7 @@ describe('App end-to-end', () => {
 
       const file = await makeTwoIconThemeZipFile();
       fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
-      await waitFor(() => expect(screen.getByText('folder', { selector: 'strong' })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
 
       fireEvent.click(galleryCheckboxFor('folder'));
       await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });

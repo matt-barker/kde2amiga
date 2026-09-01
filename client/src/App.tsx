@@ -8,6 +8,7 @@ import type { IconGroup, IconVariant } from './lib/theme/themeParser';
 import { defaultAssignment, type IconAssignment } from './lib/theme/assignment';
 import { runConversionJob, type JobConfig, type JobIconInput } from './lib/pipeline/convertJob';
 import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
+import './App.css';
 
 const DEFAULT_CONFIG: JobConfig = {
   outputSizePx: 32,
@@ -261,7 +262,7 @@ export default function App() {
   }
 
   return (
-    <div>
+    <div className="app">
       <h1>kde2amiga</h1>
       <ThemeLoader onThemeLoaded={handleThemeLoaded} />
       {zip && groups.length > 0 && (
@@ -284,19 +285,30 @@ export default function App() {
             config={config}
             onChange={setConfig}
           />
-          <button type="button" onClick={handleConvert} disabled={selected.size === 0 || converting}>
-            {converting ? 'Converting…' : 'Convert'}
-          </button>
-          {converting && progress && progress.total > 0 && (
-            <p>Converting {progress.done} of {progress.total}…</p>
-          )}
+          <div className="actions">
+            <button
+              type="button"
+              className="actions__convert"
+              onClick={handleConvert}
+              disabled={selected.size === 0 || converting}
+            >
+              {converting ? 'Converting…' : `Convert ${selected.size} icon${selected.size === 1 ? '' : 's'}`}
+            </button>
+            {converting && progress && progress.total > 0 && (
+              <p>Converting {progress.done} of {progress.total}…</p>
+            )}
+            {downloadUrl && (
+              <a className="actions__download" href={downloadUrl} download="kde2amiga-icons.zip">
+                Download
+              </a>
+            )}
+          </div>
         </>
       )}
-      {error && <p role="alert">{error}</p>}
-      {downloadUrl && (
-        <a href={downloadUrl} download="kde2amiga-icons.zip">
-          Download
-        </a>
+      {error && (
+        <p className="app__error" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );

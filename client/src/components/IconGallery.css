@@ -1,0 +1,213 @@
+/*
+ * Gallery layout. Kept beside the component rather than in index.css because the grid
+ * geometry here is coupled to constants in IconGallery.tsx — CARD_WIDTH_PX and
+ * ROW_HEIGHT — and a change to one without the other breaks the windowing arithmetic.
+ */
+
+.gallery {
+  text-align: left;
+  padding: 0 20px;
+}
+
+.gallery__search {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.gallery__search input {
+  flex: 0 1 260px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.gallery__search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.gallery__search p {
+  margin-left: auto;
+  font-size: 15px;
+}
+
+.gallery__scroll {
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.gallery__row {
+  position: absolute;
+  width: 100%;
+  display: grid;
+  /* Column count is set inline from the measured container width. */
+  align-items: start;
+  box-sizing: border-box;
+}
+
+.gallery__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* The tile is the card's body: preview, then name, then category/size, top to bottom. */
+.icon-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/*
+ * Over the swatch's top-left corner rather than in the flow, so the preview, the name
+ * and the caption stack in an unbroken column. The swatch is centred and 56px wide, so
+ * `calc(50% - 28px)` is its left edge whatever the column width. Parked at the tile's
+ * own left edge it read as a stray control floating away from the icon it belongs to.
+ */
+.icon-tile__check {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 28px);
+  z-index: 1;
+  margin: 0;
+}
+
+.icon-tile__swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  /* background-color is set inline: it is WORKBENCH_GREY, a value the conversion
+     pipeline also depends on, so it lives in the component next to that constant. */
+}
+
+.icon-tile__swatch [role='status'] {
+  font-size: 10px;
+  line-height: 1.1;
+  padding: 2px;
+  color: #300;
+  text-align: center;
+}
+
+/*
+ * Long icon names ("preferences-desktop-accessibility") are the rule, not the
+ * exception, so the name is truncated after two lines rather than allowed to push the
+ * card past ROW_HEIGHT.
+ *
+ * Fixed at two lines' height, not merely clamped to a maximum of two. Names run from
+ * "folder" to "start-here-kde-plasma", and letting the box shrink to one line pushed
+ * that card's caption and variants pill up out of line with every neighbour in the row.
+ */
+.icon-tile__name {
+  height: 2.4em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+
+.icon-tile__meta {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.gallery__variants {
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.gallery__variants:hover {
+  border-color: var(--accent-border);
+}
+
+.gallery__variants:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.gallery__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.gallery__picker {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.gallery__picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.gallery__picker-head strong {
+  color: var(--text-h);
+}
+
+.gallery__picker-head button {
+  margin-left: auto;
+  font: inherit;
+  font-size: 14px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.gallery__picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+}
