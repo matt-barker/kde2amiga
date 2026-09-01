@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { parseTheme, type IconGroup } from './themeParser';
+import { parseTheme, pickBestVariant, type IconGroup, type IconVariant } from './themeParser';
 
 /** Flattens every group's variants into one list, for tests that only care about totals. */
 function flatten(groups: IconGroup[]) {
@@ -219,5 +219,110 @@ describe('variant grouping', () => {
     const groups = await parseTheme(zip);
 
     expect(groups.map((g) => g.name).sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('pickBestVariant', () => {
+  function variant(category: string, sizePx: number, format: 'svg' | 'png' = 'svg'): IconVariant {
+    return {
+      name: 'icon',
+      category,
+      sizePx,
+      format,
+      zipPath: `${category}/${sizePx === 0 ? 'scalable' : sizePx}/icon.${format}`,
+    };
+  }
+  function group(...variants: IconVariant[]): IconGroup {
+    return { name: 'icon', variants };
+  }
+
+  it('returns the only variant when there is just one', () => {
+    const only = variant('apps', 48);
+    expect(pickBestVariant(group(only))).toBe(only);
+  });
+
+  it('prefers the category offering the deepest ladder of sizes', () => {
+    // The real `start-here-kde` shape: the theme's own icon ships at six sizes under
+    // places/, while a stale legacy copy sits alone under apps/. The deep ladder is
+    // the theme's intent; the orphan is what the theme never got round to updating.
+    const best = variant('places', 96);
+    const picked = pickBestVariant(
+      group(
+        variant('apps', 48),
+        variant('places', 16),
+        variant('places', 22),
+        variant('places', 32),
+        variant('places', 48),
+        variant('places', 64),
+        best,
+      ),
+    );
+    expect(picked).toBe(best);
+  });
+
+  it('refuses a sub-32px pick when a larger source exists in a shallower category', () => {
+    // The real `folder-wine` shape. places/ has the deeper ladder, but its best is a
+    // 22px glyph — deliberately simplified linework. Every icon in this theme is an
+    // SVG, so the size directory records *design detail*, not resolution: downscaling
+    // the 22px drawing to a 32px Amiga icon throws away detail the 48px drawing has.
+    const picked = pickBestVariant(
+      group(variant('places', 16), variant('places', 22), variant('apps', 48)),
+    );
+    expect(picked.zipPath).toBe('apps/48/icon.svg');
+  });
+
+  it('keeps the deepest-ladder pick when it already meets the size floor', () => {
+    // `folder-new`: actions/ has the deeper ladder and its best is 32px, which clears
+    // the floor — so the shallower apps/48 does not get to override it.
+    const picked = pickBestVariant(
+      group(
+        variant('actions', 16),
+        variant('actions', 22),
+        variant('actions', 24),
+        variant('actions', 32),
+        variant('places', 22),
+        variant('apps', 48),
+      ),
+    );
+    expect(picked.zipPath).toBe('actions/32/icon.svg');
+  });
+
+  it('keeps the deepest-ladder pick when nothing in the group reaches the floor', () => {
+    // The floor only ever redirects to a *better* source. With no 32px-or-larger
+    // variant anywhere, there is nothing better to redirect to, so theme intent stands.
+    const picked = pickBestVariant(
+      group(variant('places', 16), variant('places', 22), variant('apps', 24)),
+    );
+    expect(picked.zipPath).toBe('places/22/icon.svg');
+  });
+
+  it('breaks a ladder-depth tie on the better-ranked variant', () => {
+    // 30 of this theme's multi-category sets tie on depth; without a tiebreak the
+    // winner would depend on zip iteration order.
+    const picked = pickBestVariant(
+      group(variant('apps', 32), variant('apps', 48), variant('status', 32), variant('status', 64)),
+    );
+    expect(picked.zipPath).toBe('status/64/icon.svg');
+  });
+
+  it('breaks a depth-and-rank tie on category name, so the pick is deterministic', () => {
+    const forwards = group(variant('preferences', 32), variant('apps', 32));
+    const backwards = group(variant('apps', 32), variant('preferences', 32));
+    expect(pickBestVariant(forwards).zipPath).toBe('apps/32/icon.svg');
+    expect(pickBestVariant(backwards).zipPath).toBe('apps/32/icon.svg');
+  });
+
+  it('treats a scalable SVG as clearing the size floor', () => {
+    // sizePx 0 means scalable, which renders at any size — the one case where a
+    // numerically small size is the best possible source rather than the worst.
+    const picked = pickBestVariant(group(variant('places', 0), variant('apps', 48)));
+    expect(picked.zipPath).toBe('places/scalable/icon.svg');
+  });
+
+  it('prefers an SVG over a larger raster within the chosen category', () => {
+    const picked = pickBestVariant(
+      group(variant('apps', 48, 'svg'), variant('apps', 96, 'png')),
+    );
+    expect(picked.zipPath).toBe('apps/48/icon.svg');
   });
 });

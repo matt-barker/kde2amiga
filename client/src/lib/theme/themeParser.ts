@@ -131,3 +131,82 @@ export async function parseTheme(zip: JSZip): Promise<IconGroup[]> {
 
   return Array.from(byName.values());
 }
+
+/**
+ * The smallest source drawing we are willing to pick when a larger one is available.
+ *
+ * Every icon in a KDE theme of this shape is an SVG, so the size directory does not
+ * record resolution — it records how much *linework* the artist put in. A 22px drawing
+ * is a deliberately simplified glyph. Since conversion downscales to a 32px Amiga icon
+ * (`JobConfig.outputSizePx`'s default), starting from a 22px drawing throws away detail
+ * that a 48px drawing of the same icon still has. Deliberately a constant rather than
+ * wired to the live `outputSizePx`: re-picking every tile when the user nudges the
+ * output size would churn the gallery, and the floor is about which drawing the theme
+ * considers detailed, not about the exact output geometry.
+ */
+const MIN_DETAIL_PX = 32;
+
+/** Scalable SVGs have `sizePx` 0 but render at any size, so they sort as the largest. */
+function effectiveSize(variant: IconVariant): number {
+  return variant.sizePx === 0 ? Number.POSITIVE_INFINITY : variant.sizePx;
+}
+
+function compareRank(a: IconVariant, b: IconVariant): number {
+  const [af, as] = variantRank(a);
+  const [bf, bs] = variantRank(b);
+  return af - bf || as - bs;
+}
+
+/**
+ * Chooses the single variant that best represents an icon set in the gallery.
+ *
+ * Two signals, in this order:
+ *
+ * 1. **The deepest category ladder wins.** Measured against
+ *    `Slot-Symbolic-Dark-Icons` (8,381 sets), only 169 sets span more than one
+ *    category at all — but in those, a category shipping the icon at six sizes is the
+ *    theme's own artwork, while a lone orphan in another category is typically a stale
+ *    legacy copy the theme never updated. `start-here-kde` is the case in point: six
+ *    sizes under places/, one abandoned 48px copy under apps/.
+ * 2. **Never below `MIN_DETAIL_PX` when something better exists.** Ladder depth alone
+ *    picked `places/22` over `apps/48` for `folder-wine` and 104 sets like it, trading
+ *    away linework for a structural signal. When the deep-ladder pick is under the
+ *    floor and a variant at or above it exists anywhere in the set, the best such
+ *    variant wins instead. The floor only ever redirects *upward*: a set whose every
+ *    variant is tiny keeps its theme-intent pick.
+ *
+ * Ties in ladder depth fall through to variant rank and then to category name, so the
+ * pick never depends on the order the zip happened to yield entries in.
+ *
+ * The full `IconGroup.variants` list is left untouched — this picks a default to show,
+ * it does not discard the alternatives. Discarding is what once hid `folder-wine`'s two
+ * quite different drawings from the user entirely.
+ */
+export function pickBestVariant(group: IconGroup): IconVariant {
+  const byCategory = new Map<string, IconVariant[]>();
+  for (const variant of group.variants) {
+    const existing = byCategory.get(variant.category);
+    if (existing) existing.push(variant);
+    else byCategory.set(variant.category, [variant]);
+  }
+
+  const categories = Array.from(byCategory, ([category, variants]) => ({
+    category,
+    variants,
+    best: variants.reduce((a, b) => (compareRank(a, b) <= 0 ? a : b)),
+  }));
+
+  categories.sort(
+    (a, b) =>
+      b.variants.length - a.variants.length ||
+      compareRank(a.best, b.best) ||
+      a.category.localeCompare(b.category),
+  );
+
+  const deepest = categories[0].best;
+  if (effectiveSize(deepest) >= MIN_DETAIL_PX) return deepest;
+
+  const detailed = group.variants.filter((v) => effectiveSize(v) >= MIN_DETAIL_PX);
+  if (detailed.length === 0) return deepest;
+  return detailed.reduce((a, b) => (compareRank(a, b) <= 0 ? a : b));
+}
