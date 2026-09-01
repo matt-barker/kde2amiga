@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { runConversionJob } from './convertJob';
+import { runConversionJob, decodeThemeIcon, paletteIndicesFor } from './convertJob';
 import type { IconVariant } from '../theme/themeParser';
 
 describe('runConversionJob', () => {
@@ -47,5 +47,32 @@ describe('runConversionJob', () => {
     expect(parsed.file('ok.info')).not.toBeNull();
     expect(parsed.file('broken.info')).toBeNull();
     expect(progressLog[progressLog.length - 1]).toEqual([2, 2]);
+  });
+
+  it('exposes per-icon decode and palette mapping for previews', async () => {
+    const zip = new JSZip();
+    zip.file('t/32/apps/a.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#ff0000"/></svg>');
+
+    const image = await decodeThemeIcon(
+      zip,
+      { name: 'a', category: 'apps', sizePx: 32, format: 'svg', zipPath: 't/32/apps/a.svg' },
+      32,
+    );
+    expect(image.width).toBe(32);
+    expect(image.height).toBe(32);
+
+    // Includes cyan (255,0,0 inverted) so the palette actually has somewhere for
+    // the inverted colour to land: selectedState.ts's nearestPaletteIndex reserves
+    // index 0 for transparency and never remaps a foreground pixel onto it, so a
+    // 2-colour (transparent + single foreground) palette would leave invert with no
+    // other index to choose and the assertion below would be vacuous.
+    const palette: [number, number, number][] = [[0, 0, 0], [255, 0, 0], [0, 255, 255]];
+    const { normal, selected } = paletteIndicesFor(image, palette, {
+      outputSizePx: 32, maxColors: 2, selectedEffect: 'invert',
+    });
+
+    expect(normal).toHaveLength(32 * 32);
+    expect(selected).toHaveLength(32 * 32);
+    expect(selected).not.toEqual(normal); // invert must actually change something
   });
 });

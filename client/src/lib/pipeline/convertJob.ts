@@ -21,7 +21,7 @@ export interface JobConfig {
   tintColor?: [number, number, number];
 }
 
-async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
+export async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
   const file = zip.file(icon.zipPath);
   if (!file) throw new Error(`Icon file missing from zip: ${icon.zipPath}`);
 
@@ -31,6 +31,31 @@ async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: numb
   }
   const bytes = await file.async('uint8array');
   return decodePng(bytes, outputSizePx);
+}
+
+/**
+ * Maps one decoded image onto a palette, producing both icon states.
+ *
+ * Split out of `runConversionJob` so previews can render exactly what conversion
+ * would produce. The palette is a parameter rather than computed here because
+ * `buildSharedPalette` is batch-wide: a preview must be given the same palette the
+ * whole selection will share, or it will not match the output.
+ */
+export function paletteIndicesFor(
+  image: RgbaImage,
+  palette: [number, number, number][],
+  config: JobConfig,
+): { normal: number[]; selected: number[] } {
+  const normal = mapImageToPalette(image, palette);
+  const selected = applySelectedStateEffect(
+    config.selectedEffect,
+    palette,
+    normal,
+    image.width,
+    image.height,
+    config.tintColor,
+  );
+  return { normal, selected };
 }
 
 export async function runConversionJob(
@@ -60,15 +85,7 @@ export async function runConversionJob(
   const palette = buildSharedPalette(decoded.map((d) => d.image), config.maxColors);
 
   const convertedIcons: ConvertedIcon[] = decoded.map(({ input, image }) => {
-    const normalPixels = mapImageToPalette(image, palette);
-    const selectedPixels = applySelectedStateEffect(
-      config.selectedEffect,
-      palette,
-      normalPixels,
-      image.width,
-      image.height,
-      config.tintColor,
-    );
+    const { normal: normalPixels, selected: selectedPixels } = paletteIndicesFor(image, palette, config);
 
     const infoBytes = buildInfoFile({
       width: image.width,
