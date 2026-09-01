@@ -40,6 +40,22 @@ describe('IconTile', () => {
     expect(screen.getByText('places 32')).toBeInTheDocument();
   });
 
+  it('labels a scalable variant "scalable", not "0"', async () => {
+    // sizePx is 0 for a scalable SVG. This caption is what the user reads to choose
+    // between an icon's variants, so rendering the raw 0 as "places 0" is misleading,
+    // not merely untidy.
+    const scalable: IconVariant = {
+      name: 'folder', category: 'places', sizePx: 0, format: 'svg', zipPath: 't/scalable/places/folder.svg',
+    };
+    const zip = new JSZip();
+    zip.file(scalable.zipPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"/>');
+
+    render(<IconTile zip={zip} variant={scalable} checked={false} onToggle={() => {}} />);
+
+    expect(screen.getByText('places scalable')).toBeInTheDocument();
+    expect(screen.queryByText('places 0')).not.toBeInTheDocument();
+  });
+
   it('revokes its object URL on unmount so 272k icons never accumulate', async () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL');
     const { unmount } = render(
@@ -84,7 +100,7 @@ describe('IconTile', () => {
 
     render(<IconTile zip={emptyZip} variant={variant} checked={false} onToggle={() => {}} />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/folder failed to load/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/folder failed to load/i);
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
@@ -98,7 +114,7 @@ describe('IconTile', () => {
 
     render(<IconTile zip={brokenZip} variant={variant} checked={false} onToggle={() => {}} />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/folder failed to load/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/folder failed to load/i);
   });
 
   it('shows a visible failed state when the loaded bytes fail to render as an image', async () => {
@@ -107,6 +123,6 @@ describe('IconTile', () => {
     const img = await screen.findByRole('img', { name: /folder/i });
     fireEvent.error(img);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/folder failed to load/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/folder failed to load/i);
   });
 });

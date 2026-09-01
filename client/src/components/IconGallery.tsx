@@ -17,6 +17,12 @@ export function IconGallery(props: {
   const [query, setQuery] = useState('');
   const [scrollTop, setScrollTop] = useState(0);
 
+  // Undebounced on purpose, and a deliberate deviation from spec §3's "debounced
+  // substring match": the filter is a single linear pass over `matches` with no I/O, no
+  // decode and no allocation per group beyond the result array, and the spec itself
+  // sanctions a linear filter per keystroke. Debouncing would add a moving part and a
+  // visible lag to a keystroke that is already cheap. Revisit only if profiling on a
+  // 272k-variant theme says otherwise.
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return groups;
@@ -63,10 +69,22 @@ export function IconGallery(props: {
           {visible.map((group, index) => (
             <div
               key={group.name}
+              // A group is keyed by name alone, across every category and size, so
+              // Papirus's `folder` carries 15-25 variants — normal, not pathological.
+              // Laid out inline in a fixed 96px row they would wrap, overflow into the
+              // row below (this absolutely-positioned container does not clip) and force
+              // a horizontal scrollbar onto the whole viewport. So the row is a strip
+              // that scrolls sideways within itself. Its height stays fixed, which is
+              // what the windowing arithmetic above depends on: variable row heights
+              // would break `top: index * ROW_HEIGHT` outright.
               style={{
                 position: 'absolute',
                 top: (first + index) * ROW_HEIGHT,
                 height: ROW_HEIGHT,
+                width: '100%',
+                whiteSpace: 'nowrap',
+                overflowX: 'auto',
+                overflowY: 'hidden',
               }}
             >
               <strong>{group.name}</strong>

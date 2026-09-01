@@ -75,8 +75,12 @@ describe('IconGallery', () => {
 
     render(<IconGallery zip={zipFor(many.slice(0, 1))} groups={many} selected={new Set()} onSelectionChange={() => {}} />);
 
-    // Virtualized: far fewer rows in the DOM than groups in the theme.
-    expect(screen.getAllByRole('checkbox').length).toBeLessThan(200);
+    // Virtualized. The bound is the exact window, not a loose ceiling: with
+    // VIEWPORT_HEIGHT 600, ROW_HEIGHT 96 and OVERSCAN 4 that is
+    // ceil(600 / 96) + 4 * 2 = 15 rows, and one variant per group here means 15
+    // checkboxes. A loose "< 200" would have sat quietly through a windowing
+    // regression that mounted an order of magnitude too much.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(15);
   });
 
   it('keeps showing filtered results after scrolling deep into the unfiltered list', () => {
@@ -112,5 +116,38 @@ describe('IconGallery', () => {
     // window would still point at index ~2996 of a 1-item `matches` array and render
     // nothing here, even though the filtered result exists.
     expect(screen.getByText('special-target')).toBeInTheDocument();
+  });
+
+  it("lays a group's variants out as a fixed-height horizontal strip", () => {
+    // Grouping is by name alone, across every category and size, so a Papirus `folder`
+    // has 15-25 variants. That is normal, not pathological. Each tile is a 48px image
+    // plus a checkbox plus a caption; wrapped inside a fixed 96px row they would spill
+    // over the row below (the absolutely-positioned container does not clip) and push a
+    // horizontal scrollbar onto the whole viewport. The row scrolls sideways within
+    // itself instead, which is also what keeps the fixed-height windowing arithmetic
+    // honest — variable row heights would break it.
+    const wide: IconGroup[] = [
+      {
+        name: 'folder',
+        variants: Array.from({ length: 20 }, (_, i) => ({
+          name: 'folder',
+          category: `cat${i}`,
+          sizePx: 48,
+          format: 'svg' as const,
+          zipPath: `a/cat${i}/48/folder.svg`,
+        })),
+      },
+    ];
+
+    render(<IconGallery zip={zipFor(wide)} groups={wide} selected={new Set()} onSelectionChange={() => {}} />);
+
+    const row = screen.getByText('folder', { selector: 'strong' }).closest('div')!;
+    expect(row).toHaveStyle({
+      height: '96px',
+      width: '100%',
+      whiteSpace: 'nowrap',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+    });
   });
 });

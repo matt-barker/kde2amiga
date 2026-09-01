@@ -11,7 +11,7 @@ export type IconKind = 'disk' | 'drawer' | 'tool' | 'project' | 'trashcan';
  * at all. Workbench then draws the classic planar fallback (see `classicImage.ts`) and
  * lists the IM1=/IM2= lines verbatim in the Icon Information window.
  *
- * Verified on real hardware — A1200 / OS 3.2.2, icon.library 47.5 — by rendering two
+ * Verified on real hardware — A1200 / OS 3.2.3, icon.library 47.5 — by rendering two
  * files that differed in nothing but these entries: without them a plain box, with them
  * the full-colour NewIcons image. Both vendored real-world fixtures carry them as their
  * first two ToolTypes (see `newIconsFixtures.test.ts`), and icon.library 47.5's own

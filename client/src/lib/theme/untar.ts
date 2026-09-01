@@ -164,6 +164,15 @@ export async function* untarStream(
 
       if (typeflag !== TYPEFLAG_REGULAR && typeflag !== TYPEFLAG_REGULAR_NUL) {
         // Directory, symlink, or other special entry: not a file we extract.
+        //
+        // Known limitation, not a regression: KDE themes symlink aggressively (a whole
+        // size directory aliased to another, an icon aliased to its "-symbolic" twin),
+        // and typeflag '2' entries are silently dropped here rather than resolved
+        // against their target. Icons that exist in a theme only as a symlink will
+        // therefore not appear in the gallery at all. If an icon is missing from a
+        // converted theme and it is present in the tarball, this is the first place to
+        // look. Resolving links means a second pass (targets can appear after the link)
+        // and is deliberately out of scope for now.
         pendingLongName = null;
         continue;
       }

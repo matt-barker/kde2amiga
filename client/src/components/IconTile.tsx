@@ -83,10 +83,19 @@ export function IconTile(props: {
           />
         )}
         {state.status === 'error' && (
-          <span role="alert">{`${variant.name} failed to load`}</span>
+          // `status`, not `alert`: with virtualization, scrolling through a stretch of
+          // broken entries mounts tile after tile, and `alert` would fire an assertive
+          // screen-reader interruption for every one of them. The text is visible either
+          // way; a polite live region is the right weight for "this thumbnail didn't load".
+          <span role="status">{`${variant.name} failed to load`}</span>
         )}
       </span>
-      <small>{`${variant.category} ${variant.sizePx}`}</small>
+      {/*
+        `sizePx` is 0 for a scalable SVG, so a raw render reads "places 0" — and this is
+        the label the user picks a variant by, which makes a meaningless number actively
+        misleading rather than merely untidy.
+      */}
+      <small>{`${variant.category} ${variant.sizePx === 0 ? 'scalable' : variant.sizePx}`}</small>
     </label>
   );
 }
