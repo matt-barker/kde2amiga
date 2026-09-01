@@ -117,10 +117,17 @@ describe('ThemeLoader', () => {
     zip.file('scalable/places/folder.svg', '<svg></svg>');
     const arrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
 
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array(arrayBuffer));
+        c.close();
+      },
+    });
+
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
-      arrayBuffer: async () => arrayBuffer,
+      body,
     } as Response);
 
     const onThemeLoaded = vi.fn();

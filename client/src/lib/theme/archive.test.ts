@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { loadArchive } from './archive';
 import { parseTheme } from './themeParser';
 import { buildTar } from './untar.test';
+
+// Held in a variable: a literal `new URL(..., import.meta.url)` is rewritten by Vite
+// into an asset URL, which breaks the lookup under vitest.
+const archiveModuleUrl = import.meta.url;
 
 const BLOCK = 512;
 
@@ -168,4 +174,20 @@ describe('loadArchive', () => {
     expect(zip.file('theme/48x48/apps/a.svg')).not.toBeNull();
     expect(zip.file('theme/LICENSE')).toBeNull();
   });
+});
+
+it('reads a real .tar.xz archive and keeps only wanted files', async () => {
+  const path = fileURLToPath(new URL('./__fixtures__/sample-theme.tar.xz', archiveModuleUrl));
+  const bytes = new Uint8Array(readFileSync(path));
+
+  const zip = await loadArchive(bytes);
+
+  expect(zip.file('theme/48x48/apps/sample.svg')).not.toBeNull();
+  expect(zip.file('theme/LICENSE')).toBeNull();
+});
+
+it('still rejects an archive with no recognised magic', async () => {
+  await expect(loadArchive(new Uint8Array([1, 2, 3, 4, 5, 6]))).rejects.toThrow(
+    'Unrecognised archive format',
+  );
 });
