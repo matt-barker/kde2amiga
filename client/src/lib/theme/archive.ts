@@ -45,7 +45,7 @@ export async function loadArchive(data: ArrayBuffer | Uint8Array): Promise<JSZip
 
   if (hasMagic(bytes, GZIP_MAGIC)) {
     const tarBytes = await gunzip(bytes);
-    const entries = untar(tarBytes);
+    const entries = await untar(tarBytes);
     const zip = new JSZip();
     for (const entry of entries) {
       if (isWanted(entry.path)) {

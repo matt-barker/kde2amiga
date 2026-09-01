@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { untar } from './untar';
+import { untar, untarStream, type TarEntry } from './untar';
 
 const BLOCK = 512;
 
@@ -98,51 +98,125 @@ function endOfArchive(): Uint8Array {
   return new Uint8Array(BLOCK * 2);
 }
 
-function buildTar(entries: Uint8Array[]): Uint8Array {
+export function buildTar(entries: Uint8Array[]): Uint8Array {
   return concat([...entries, endOfArchive()]);
 }
 
 describe('untar', () => {
-  it('extracts regular files with their contents', () => {
+  it('extracts regular files with their contents', async () => {
     const tar = buildTar([fileEntry('index.theme', '[Icon Theme]\nName=Test')]);
-    const files = untar(tar);
+    const files = await untar(tar);
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe('index.theme');
     expect(new TextDecoder().decode(files[0].data)).toBe('[Icon Theme]\nName=Test');
   });
 
-  it('skips directory entries', () => {
+  it('skips directory entries', async () => {
     const tar = buildTar([dirEntry('scalable/'), fileEntry('scalable/folder.svg', '<svg/>')]);
-    const files = untar(tar);
+    const files = await untar(tar);
     expect(files.map((f) => f.path)).toEqual(['scalable/folder.svg']);
   });
 
-  it('joins ustar prefix and name for long paths', () => {
+  it('joins ustar prefix and name for long paths', async () => {
     const prefix = 'Papirus-master/Papirus/48x48/apps';
     const tar = buildTar([fileEntry('firefox.svg', '<svg/>', { prefix })]);
-    const files = untar(tar);
+    const files = await untar(tar);
     expect(files[0].path).toBe('Papirus-master/Papirus/48x48/apps/firefox.svg');
   });
 
-  it('honours a GNU long-name (typeflag L) entry for the following file', () => {
+  it('honours a GNU long-name (typeflag L) entry for the following file', async () => {
     const longPath = 'Papirus-master/' + 'a/'.repeat(20) + 'deeply-nested-icon.svg';
     const tar = buildTar([gnuLongNameEntry(longPath), fileEntry('deeply-nested-icon.svg', '<svg/>')]);
-    const files = untar(tar);
+    const files = await untar(tar);
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe(longPath);
   });
 
-  it('honours a PAX extended header (typeflag x) path record for the following file', () => {
+  it('honours a PAX extended header (typeflag x) path record for the following file', async () => {
     const longPath = 'Papirus-master/' + 'b/'.repeat(20) + 'pax-icon.png';
     const tar = buildTar([paxExtendedHeaderEntry(longPath), fileEntry('pax-icon.png', 'PNGDATA')]);
-    const files = untar(tar);
+    const files = await untar(tar);
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe(longPath);
   });
 
-  it('throws a clear error on a truncated archive', () => {
+  it('throws a clear error on a truncated archive', async () => {
     const header = makeHeader({ name: 'broken.svg', size: 100, typeflag: '0' });
     const tar = concat([header, new Uint8Array(10)]); // declares 100 bytes of data, has 10
-    expect(() => untar(tar)).toThrow(/truncated|malformed/i);
+    await expect(untar(tar)).rejects.toThrow(/truncated|malformed/i);
+  });
+});
+
+/** Emits `bytes` in fixed-size chunks so entries straddle chunk boundaries. */
+function chunkedStream(bytes: Uint8Array, chunkSize: number): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (offset >= bytes.length) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(bytes.subarray(offset, offset + chunkSize));
+      offset += chunkSize;
+    },
+  });
+}
+
+async function collect(stream: ReadableStream<Uint8Array>): Promise<TarEntry[]> {
+  const out: TarEntry[] = [];
+  for await (const entry of untarStream(stream)) out.push(entry);
+  return out;
+}
+
+describe('untarStream', () => {
+  it('reads entries whose headers and data straddle chunk boundaries', async () => {
+    const tar = buildTar([fileEntry('a/one.svg', 'hello'), fileEntry('a/two.svg', 'x'.repeat(1500))]);
+
+    // 7 is deliberately coprime with the 512-byte block size, so every header
+    // and every data run is split across at least two chunks.
+    const entries = await collect(chunkedStream(tar, 7));
+
+    expect(entries.map((e) => e.path)).toEqual(['a/one.svg', 'a/two.svg']);
+    expect(new TextDecoder().decode(entries[0].data)).toBe('hello');
+    expect(entries[1].data.byteLength).toBe(1500);
+  });
+
+  it('yields an entry before the source stream is exhausted', async () => {
+    const tar = buildTar([fileEntry('a/one.svg', 'first'), fileEntry('a/two.svg', 'second')]);
+
+    // A ReadableStream with the default highWaterMark (1) invokes `pull()` again
+    // automatically as soon as its sole buffered chunk is dequeued — regardless of
+    // whether the consumer asked for more. That makes `pull()` an unreliable signal
+    // for "did the consumer read ahead." Instead, count real reads issued against
+    // the reader itself: the first entry (1024 bytes: header + padded data) should
+    // be satisfied by a single read of the one chunk that was enqueued up front,
+    // without the consumer ever needing to request a second one.
+    let realReadCount = 0;
+    const stalling = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // Enough for the first entry plus its padding, then stall forever.
+        controller.enqueue(tar.subarray(0, 1024));
+      },
+      pull() {
+        // Never supplies more data; if the consumer waited on this, the test would hang.
+      },
+    });
+    const originalGetReader = stalling.getReader.bind(stalling);
+    (stalling as { getReader: typeof stalling.getReader }).getReader = (() => {
+      const reader = originalGetReader();
+      const originalRead = reader.read.bind(reader);
+      reader.read = (...args: Parameters<typeof originalRead>) => {
+        realReadCount++;
+        return originalRead(...args);
+      };
+      return reader;
+    }) as typeof stalling.getReader;
+
+    const iterator = untarStream(stalling)[Symbol.asyncIterator]();
+    const first = await iterator.next();
+
+    expect(first.done).toBe(false);
+    expect(first.value?.path).toBe('a/one.svg');
+    expect(realReadCount).toBe(1); // delivered without asking the source for more
   });
 });
