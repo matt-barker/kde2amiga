@@ -86,3 +86,24 @@ describe('applySelectedStateEffect', () => {
     expect(result).toEqual([1, 1, 0]);
   });
 });
+
+describe('glowSurround with a chosen colour', () => {
+  it('draws the border in the palette entry nearest the chosen colour, not the brightest', () => {
+    // Without a glow colour the border takes palette[1] (white, the brightest entry).
+    // Asking for a mid-grey has to move it to palette[2] (100,100,100) instead.
+    const result = applySelectedStateEffect('glowSurround', palette, [1, 0, 0], 3, 1, undefined, [90, 90, 90]);
+    expect(result).toEqual([1, 2, 0]);
+  });
+
+  it('still uses the brightest entry when no glow colour is chosen', () => {
+    const result = applySelectedStateEffect('glowSurround', palette, [1, 0, 0], 3, 1);
+    expect(result).toEqual([1, 1, 0]);
+  });
+
+  it('never draws the glow in the reserved transparent slot, however dark the chosen colour', () => {
+    // Black is exactly palette[0], but index 0 is the transparency hole: a glow that
+    // landed there would be invisible rather than dark.
+    const result = applySelectedStateEffect('glowSurround', palette, [1, 0, 0], 3, 1, undefined, [0, 0, 0]);
+    expect(result[1]).not.toBe(0);
+  });
+});

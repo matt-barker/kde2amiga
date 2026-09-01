@@ -108,3 +108,37 @@ describe('runConversionJob', () => {
     expect(palette[normal[0]]).toEqual([0, 0, 0]); // the source colour, unblended
   });
 });
+
+describe('glow surround colour', () => {
+  /** One opaque pixel in the middle of a 3x3 transparent field, for the glow to grow into. */
+  function dotOnTransparent() {
+    const data = new Uint8ClampedArray(3 * 3 * 4);
+    data.set([255, 0, 0, 255], (1 * 3 + 1) * 4);
+    return { width: 3, height: 3, data };
+  }
+
+  it('reserves a palette slot so the chosen colour is reproduced exactly', () => {
+    // Green is nowhere in a red icon, so without a reserved slot the glow would snap to
+    // whatever red the median cut happened to produce.
+    const { palette, selected } = prepareIcon(dotOnTransparent(), {
+      outputSizePx: 3, maxColors: 8, selectedEffect: 'glowSurround', glowColor: [0, 255, 0],
+    });
+    expect(palette).toContainEqual([0, 255, 0]);
+    // The four orthogonal neighbours of the centre are the glow.
+    expect(palette[selected[1]]).toEqual([0, 255, 0]);
+  });
+
+  it('keeps the reserved slot inside the configured colour ceiling', () => {
+    const { palette } = prepareIcon(dotOnTransparent(), {
+      outputSizePx: 3, maxColors: 4, selectedEffect: 'glowSurround', glowColor: [0, 255, 0],
+    });
+    expect(palette.length).toBeLessThanOrEqual(4);
+  });
+
+  it('reserves nothing when the effect is not glow surround', () => {
+    const { palette } = prepareIcon(dotOnTransparent(), {
+      outputSizePx: 3, maxColors: 8, selectedEffect: 'invert', glowColor: [0, 255, 0],
+    });
+    expect(palette).not.toContainEqual([0, 255, 0]);
+  });
+});

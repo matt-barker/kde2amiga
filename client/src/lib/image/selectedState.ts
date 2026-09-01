@@ -48,6 +48,7 @@ export function applySelectedStateEffect(
   width: number,
   height: number,
   tintColor?: Rgb,
+  glowColor?: Rgb,
 ): number[] {
   const remapCache = new Map<number, number>();
   const remap = (index: number): number => {
@@ -63,13 +64,27 @@ export function applySelectedStateEffect(
   const result = pixels.map(remap);
 
   if (effect === 'glowSurround') {
-    const brightestIndex = palette.reduce(
-      (best, color, index) => {
-        const brightness = color[0] + color[1] + color[2];
-        return brightness > best.brightness ? { index, brightness } : best;
-      },
-      { index: 0, brightness: -1 },
-    ).index;
+    /*
+     * A chosen colour is honoured through the palette, not around it. Both states of an
+     * .info share one palette, so the glow can only ever be an entry in it — which is why
+     * `prepareIcon` reserves a slot and appends the picked colour verbatim when one is
+     * set, making this lookup exact rather than approximate. Asking for the nearest entry
+     * regardless keeps the function honest if it is ever called with a palette that has
+     * no room for the colour: the glow degrades to the closest available, never to the
+     * transparent slot.
+     *
+     * With no colour chosen it stays what it always was — the brightest entry, i.e. the
+     * white-ish halo GlowIcons draws.
+     */
+    const glowIndex = glowColor
+      ? nearestPaletteIndex(glowColor, palette)
+      : palette.reduce(
+          (best, color, index) => {
+            const brightness = color[0] + color[1] + color[2];
+            return brightness > best.brightness ? { index, brightness } : best;
+          },
+          { index: 0, brightness: -1 },
+        ).index;
 
     const preGlow = result.slice();
 
@@ -84,7 +99,7 @@ export function applySelectedStateEffect(
           if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false;
           return preGlow[ny * width + nx] !== 0;
         });
-        if (touchesForeground) result[i] = brightestIndex;
+        if (touchesForeground) result[i] = glowIndex;
       }
     }
   }

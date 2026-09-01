@@ -3,6 +3,7 @@ import type { IconVariant } from '../theme/themeParser';
 import { rasterizeSvg, decodePng } from '../image/decode';
 import { compositeBadge, type BadgeOptions } from '../badges/compositeBadge';
 import { buildSharedPalette, mapImageToPalette, type RgbaImage } from '../image/quantize';
+import { maxColorsForSingleLine } from '../newicons/paletteLimits';
 import { flattenOntoBackground } from '../image/flatten';
 import { applySelectedStateEffect, type SelectedStateEffect } from '../image/selectedState';
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
@@ -31,6 +32,15 @@ export interface JobConfig {
    * that only resolves against the standard Workbench grey.
    */
   backgroundColor?: [number, number, number];
+  /**
+   * The colour the `glowSurround` selected state draws its halo in.
+   *
+   * Undefined keeps the original behaviour — the brightest entry the icon's own palette
+   * happens to hold, which is near enough white for most artwork and was the only glow
+   * available before this was configurable. Setting it costs one palette slot, because a
+   * colour the icon does not contain cannot otherwise be drawn; see `prepareIcon`.
+   */
+  glowColor?: [number, number, number];
 }
 
 export async function decodeThemeIcon(zip: JSZip, icon: IconVariant, outputSizePx: number): Promise<RgbaImage> {
@@ -75,7 +85,19 @@ export function prepareIcon(decoded: RgbaImage, config: JobConfig): PreparedIcon
     ? flattenOntoBackground(decoded, config.backgroundColor)
     : decoded;
 
-  const palette = buildSharedPalette([image], config.maxColors);
+  /*
+   * A chosen glow colour has to be *in* the palette, or it cannot be drawn at all: both
+   * states of an .info share one palette, and the median cut only ever produces colours
+   * the icon already contains — so a green halo on a red icon would snap to red. One slot
+   * is taken off the quantizer's budget and the picked colour appended verbatim, keeping
+   * the total inside the same ceiling. The cost is one colour of an already scarce 34,
+   * which is why nothing is reserved unless the glow is both selected and configured.
+   */
+  const reservesGlowSlot = config.selectedEffect === 'glowSurround' && config.glowColor !== undefined;
+  const cap = Math.min(config.maxColors, maxColorsForSingleLine());
+  const palette = buildSharedPalette([image], reservesGlowSlot ? Math.max(cap - 1, 1) : cap);
+  if (config.glowColor && reservesGlowSlot) palette.push(config.glowColor);
+
   const normal = mapImageToPalette(image, palette);
   const selected = applySelectedStateEffect(
     config.selectedEffect,
@@ -84,6 +106,7 @@ export function prepareIcon(decoded: RgbaImage, config: JobConfig): PreparedIcon
     image.width,
     image.height,
     config.tintColor,
+    config.glowColor,
   );
   return { palette, normal, selected, width: image.width, height: image.height };
 }
