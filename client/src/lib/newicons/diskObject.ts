@@ -37,8 +37,16 @@ export function buildInfoFile(params: {
   kind: IconKind;
   normal: NewIconState;
   selected: NewIconState;
+  /**
+   * The program Workbench runs when this icon is double-clicked (`do_DefaultTool`).
+   *
+   * Only the archive's "Install Default Icons" icon sets it, to `IconX`; converted
+   * icons stand next to files that already have their own tool, and a DefaultTool
+   * they did not ask for would hijack the double-click.
+   */
+  defaultTool?: string;
 }): Uint8Array {
-  const { width, height, kind, normal, selected } = params;
+  const { width, height, kind, normal, selected, defaultTool } = params;
 
   const isDrawerLike = kind === 'drawer' || kind === 'trashcan';
 
@@ -70,7 +78,7 @@ export function buildInfoFile(params: {
   w.writeDWord(1); // userData
   w.writeUByte(ICON_TYPE_CODES[kind]);
   w.writeUByte(0); // padding
-  w.writeDWord(0); // hasDefaultTool
+  w.writeDWord(defaultTool === undefined ? 0 : 1); // hasDefaultTool
   w.writeDWord(1); // hasToolTypes
   w.writeLong(128 << 24); // currentX
   w.writeLong(128 << 24); // currentY
@@ -82,6 +90,14 @@ export function buildInfoFile(params: {
 
   writeClassicImage(w, width, height, false);
   writeClassicImage(w, width, height, true);
+
+  // do_DefaultTool's string sits between the images and the ToolTypes array. Writing it
+  // anywhere else leaves a reader treating its length field as the ToolTypes count.
+  if (defaultTool !== undefined) {
+    w.writeDWord(defaultTool.length + 1);
+    w.writeString(defaultTool);
+    w.writeUByte(0);
+  }
 
   // ToolTypes array
   w.writeDWord((toolTypes.length + 1) * 4);

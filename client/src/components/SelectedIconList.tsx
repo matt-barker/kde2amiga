@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconKind } from '../lib/newicons/diskObject';
-import type { DefaultIconRole } from '../lib/output/zipBuilder';
+import {
+  DEFAULT_ICON_SLOTS,
+  slotForRole,
+  type DefaultIconRole,
+} from '../lib/output/defaultIconSlots';
 import { defaultAssignment, type IconAssignment } from '../lib/theme/assignment';
 import type { IconPreview } from '../lib/pipeline/preview';
 import { WORKBENCH_GREY } from './IconTile';
@@ -9,14 +13,24 @@ import './SelectedIconList.css';
 
 const KINDS: IconKind[] = ['drawer', 'project', 'tool', 'disk', 'trashcan'];
 
-/** The five kinds that are also legal ENVARC:Sys/def_*.info slots. */
-const ROLE_FOR_KIND: Record<IconKind, DefaultIconRole> = {
-  drawer: 'drawer',
-  project: 'project',
-  tool: 'tool',
-  disk: 'disk',
-  trashcan: 'trashcan',
-};
+/**
+ * Thirty-three slots in one flat list would bury the five most people want behind two
+ * dozen file types they will never tag, so the dropdown keeps the two families apart.
+ */
+const SLOT_GROUPS = [
+  { group: 'type', label: 'Fallback by icon type' },
+  { group: 'deficons', label: 'Fallback by file type (DefIcons)' },
+] as const;
+
+/**
+ * Whether icon.library finds this slot by the DiskObject type byte.
+ *
+ * It decides which way the two dropdowns pull on each other. A type fallback is looked
+ * up *by* the type, so the two must agree and each one moves the other; a DefIcons slot
+ * is matched on the file's datatype and has no such tie, so choosing `def_picture` must
+ * not silently retype the icon.
+ */
+const isTypeFallback = (role: DefaultIconRole) => slotForRole(role).group === 'type';
 
 function PreviewCanvas(props: { image: ImageData; label: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
@@ -75,7 +89,6 @@ export function SelectedIconList(props: {
             const kindId = `kind-${variant.zipPath}`;
             const roleId = `role-${variant.zipPath}`;
             const preview = previews?.get(variant.zipPath);
-            const role = ROLE_FOR_KIND[assignment.kind];
 
             return (
               <tr key={variant.zipPath}>
@@ -118,16 +131,23 @@ export function SelectedIconList(props: {
                   <select
                     id={kindId}
                     value={assignment.kind}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const kind = event.target.value as IconKind;
                       onAssignmentChange(variant.zipPath, {
                         ...assignment,
-                        kind: event.target.value as IconKind,
-                        // Keep the role consistent with the kind it mirrors.
-                        role: assignment.role
-                          ? ROLE_FOR_KIND[event.target.value as IconKind]
-                          : undefined,
-                      })
-                    }
+                        kind,
+                        /*
+                         * Every IconKind is also the name of a type-fallback slot, which
+                         * is what makes this cast safe — and what makes the retarget
+                         * necessary: a row left claiming def_drawer after being retyped
+                         * as a disk writes a disk icon into the drawer's slot.
+                         */
+                        role:
+                          assignment.role && isTypeFallback(assignment.role)
+                            ? (kind as DefaultIconRole)
+                            : assignment.role,
+                      });
+                    }}
                   >
                     {KINDS.map((kind) => (
                       <option key={kind} value={kind}>
@@ -138,30 +158,38 @@ export function SelectedIconList(props: {
                 </td>
 
                 <td className="selected__role">
-                  <input
-                    id={roleId}
-                    type="checkbox"
-                    checked={assignment.role !== undefined}
-                    /*
-                      The label names the *slot*, not the icon. There are five default
-                      slots on AmigaOS and one icon fills each; "use as system default
-                      for folder-music" named the icon and so said nothing at all. The
-                      accessible name still carries the icon name, because two rows of
-                      the same kind would otherwise share one label.
-                    */
-                    aria-label={`Use ${variant.name} as the system default ${assignment.kind} icon`}
-                    onChange={(event) =>
-                      onAssignmentChange(variant.zipPath, {
-                        // Spread, like the kind handler above: rebuilding the object field by
-                        // field would silently drop any third field added to IconAssignment later.
-                        ...assignment,
-                        role: event.target.checked ? ROLE_FOR_KIND[assignment.kind] : undefined,
-                      })
-                    }
-                  />
-                  <label htmlFor={roleId} aria-hidden="true">
-                    {`def_${role}`}
+                  {/*
+                    The label names the *slot*, not the icon: one icon fills each slot,
+                    so "use as system default for folder-music" named the icon and said
+                    nothing about what picking it would do. The accessible name still
+                    carries the icon name, because two rows would otherwise share a label.
+                  */}
+                  <label className="visually-hidden" htmlFor={roleId}>
+                    {`System default slot for ${variant.name}`}
                   </label>
+                  <select
+                    id={roleId}
+                    value={assignment.role ?? ''}
+                    onChange={(event) => {
+                      const role = event.target.value === '' ? undefined : (event.target.value as DefaultIconRole);
+                      onAssignmentChange(variant.zipPath, {
+                        ...assignment,
+                        role,
+                        kind: role && isTypeFallback(role) ? slotForRole(role).kind : assignment.kind,
+                      });
+                    }}
+                  >
+                    <option value="">none</option>
+                    {SLOT_GROUPS.map(({ group, label }) => (
+                      <optgroup key={group} label={label}>
+                        {DEFAULT_ICON_SLOTS.filter((slot) => slot.group === group).map((slot) => (
+                          <option key={slot.role} value={slot.role}>
+                            {`def_${slot.role} — ${slot.description}`}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                 </td>
 
                 <td className="selected__remove">
@@ -184,8 +212,10 @@ export function SelectedIconList(props: {
       </table>
 
       <p className="selected__note">
-        A ticked row is also written to <code>Sys/def_*.info</code>, the icon AmigaOS
-        falls back to for everything of that type. One icon per slot.
+        A row with a slot picked is also written to <code>Sys/def_*.info</code>, the icon
+        AmigaOS falls back to when a file or drawer has none of its own. One icon per
+        slot. The archive then carries an <code>Install Default Icons</code> script that
+        copies them into place.
       </p>
     </section>
   );
