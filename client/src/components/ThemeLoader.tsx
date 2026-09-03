@@ -2,6 +2,12 @@ import { useState, type ChangeEvent } from 'react';
 import type JSZip from 'jszip';
 import { loadArchive, type ArchiveSource } from '../lib/theme/archive';
 import { parseTheme, type IconGroup } from '../lib/theme/themeParser';
+import {
+  parseStoreProductId,
+  ocsProductUrl,
+  parseStoreProduct,
+  type StoreProduct,
+} from '../lib/theme/storeUrl';
 import './ThemeLoader.css';
 
 /**
@@ -16,10 +22,31 @@ function paintBeforeWorking(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/**
+ * Everything remote goes through the app's own proxy, and the store path needs it twice.
+ *
+ * The OCS API sends no CORS headers at all, so the lookup cannot be made from the page.
+ * The archive host does allow cross-origin reads, but the signed link it hands back is
+ * minted for whichever address asked for it — so resolving on the server and downloading
+ * from the browser would be two different addresses. Both hops share this one route.
+ */
+function proxyUrl(target: string): string {
+  return `/api/fetch-url?url=${encodeURIComponent(target)}`;
+}
+
+/** OCS reports sizes in KB; anything theme-sized reads better in MB. */
+function formatSize(sizeKb: number): string {
+  if (sizeKb <= 0) return '';
+  return sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+}
+
 export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGroup[]) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState('');
+  const [storeUrl, setStoreUrl] = useState('');
   const [busy, setBusy] = useState(false);
+  const [product, setProduct] = useState<StoreProduct | null>(null);
+  const [pickedUrl, setPickedUrl] = useState('');
 
   async function loadFromArchive(source: ArchiveSource) {
     try {
@@ -37,26 +64,26 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGro
     }
   }
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  /**
+   * Raises the blocking overlay for the duration of `work`.
+   *
+   * In a finally, so a failed read cannot leave the overlay standing over the error
+   * message it is hiding.
+   */
+  async function withOverlay(work: () => Promise<void>) {
     setBusy(true);
     try {
       await paintBeforeWorking();
-      await loadFromArchive(file.stream());
+      await work();
     } finally {
-      // In a finally, so a failed read cannot leave the overlay standing over the error
-      // message it is hiding.
       setBusy(false);
     }
   }
 
-  async function handleFetchUrl() {
-    if (!url) return;
-    setBusy(true);
+  /** The one download path, shared by the direct-URL field and both store routes. */
+  async function loadArchiveFromUrl(target: string) {
     try {
-      await paintBeforeWorking();
-      const response = await fetch(`/api/fetch-url?url=${encodeURIComponent(url)}`);
+      const response = await fetch(proxyUrl(target));
       if (!response.ok) {
         setError(`Could not fetch that URL (status ${response.status}).`);
         return;
@@ -69,9 +96,68 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGro
     } catch (err) {
       console.error('Failed to fetch theme URL:', err);
       setError('Could not fetch that URL.');
-    } finally {
-      setBusy(false);
     }
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await withOverlay(() => loadFromArchive(file.stream()));
+  }
+
+  async function handleFetchUrl() {
+    if (!url) return;
+    await withOverlay(() => loadArchiveFromUrl(url));
+  }
+
+  async function handleFetchStore() {
+    if (!storeUrl) return;
+
+    // Checked before the overlay goes up: a typo should answer instantly rather than
+    // flash a "Reading theme…" card at a URL that was never going to be fetched.
+    const id = parseStoreProductId(storeUrl);
+    if (!id) {
+      setProduct(null);
+      setError('That is not a store.kde.org product page — paste a link such as https://store.kde.org/p/2344960.');
+      return;
+    }
+
+    await withOverlay(async () => {
+      let resolved: StoreProduct;
+      try {
+        const response = await fetch(proxyUrl(ocsProductUrl(id)));
+        if (!response.ok) {
+          setProduct(null);
+          setError(`Could not reach the store (status ${response.status}).`);
+          return;
+        }
+        resolved = parseStoreProduct(await response.json());
+      } catch (err) {
+        console.error('Failed to resolve store product:', err);
+        setProduct(null);
+        // parseStoreProduct's messages name the actual problem — an id that no longer
+        // exists, or a product with nothing attached — so they are worth showing as-is.
+        setError(err instanceof Error ? err.message : 'Could not look up that store product.');
+        return;
+      }
+
+      setError(null);
+      if (resolved.files.length === 1) {
+        setProduct(null);
+        await loadArchiveFromUrl(resolved.files[0].url);
+        return;
+      }
+
+      // Several files under one product id are usually colour variants, which are
+      // different themes wearing one page. Picking for the user would be guessing.
+      setProduct(resolved);
+      setPickedUrl(resolved.files[0].url);
+    });
+  }
+
+  async function handleLoadSelected() {
+    if (!pickedUrl) return;
+    await withOverlay(() => loadArchiveFromUrl(pickedUrl));
   }
 
   return (
@@ -88,7 +174,7 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGro
       </div>
 
       <div className="loader__field">
-        <label htmlFor="theme-url">Or fetch from a URL</label>
+        <label htmlFor="theme-url">Or fetch from a direct archive URL</label>
         <div className="loader__url">
           <input
             id="theme-url"
@@ -98,9 +184,58 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGro
             disabled={busy}
             onChange={(e) => setUrl(e.target.value)}
           />
-          <button type="button" disabled={busy} onClick={handleFetchUrl}>Fetch</button>
+          {/*
+            * Both Fetch buttons read "Fetch" on screen, where the field above each one
+            * says what is being fetched. A screen reader announces them out of that
+            * context, so each carries the distinction in its accessible name.
+            */}
+          <button type="button" aria-label="Fetch archive URL" disabled={busy} onClick={handleFetchUrl}>Fetch</button>
         </div>
       </div>
+
+      <div className="loader__field">
+        <label htmlFor="theme-store-url">Or fetch from a store.kde.org URL</label>
+        <div className="loader__url">
+          <input
+            id="theme-store-url"
+            type="text"
+            placeholder="https://store.kde.org/p/2344960"
+            value={storeUrl}
+            disabled={busy}
+            onChange={(e) => setStoreUrl(e.target.value)}
+          />
+          <button type="button" aria-label="Fetch store product" disabled={busy} onClick={handleFetchStore}>Fetch</button>
+        </div>
+      </div>
+
+      {product && (
+        <div className="loader__variants">
+          <p className="loader__variants-title">
+            <strong>{product.name}</strong> publishes {product.files.length} downloads — pick one:
+          </p>
+          <ul className="loader__variant-list">
+            {product.files.map((file) => (
+              <li key={file.url}>
+                <label className="loader__variant">
+                  <input
+                    type="radio"
+                    name="store-variant"
+                    value={file.url}
+                    checked={pickedUrl === file.url}
+                    disabled={busy}
+                    onChange={() => setPickedUrl(file.url)}
+                  />
+                  <span className="loader__variant-name">{file.name}</span>
+                  <span className="loader__variant-size">{formatSize(file.sizeKb)}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <button type="button" disabled={busy || !pickedUrl} onClick={handleLoadSelected}>
+            Load selected
+          </button>
+        </div>
+      )}
 
       {error && <p className="loader__error" role="alert">{error}</p>}
 
