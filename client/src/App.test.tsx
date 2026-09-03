@@ -301,8 +301,12 @@ describe('App end-to-end', () => {
 
     fireEvent.click(galleryCheckboxFor('folder'));
     fireEvent.click(galleryCheckboxFor('folder-open'));
-    fireEvent.click(await screen.findByLabelText(/use folder as the system default/i));
-    fireEvent.click(await screen.findByLabelText(/use folder-open as the system default/i));
+    // Anchored, or /folder/ would also match the folder-open row's slot dropdown.
+    for (const name of ['folder', 'folder-open']) {
+      fireEvent.change(await screen.findByLabelText(new RegExp(`default slot for ${name}$`, 'i')), {
+        target: { value: 'drawer' },
+      });
+    }
 
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 

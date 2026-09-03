@@ -5,6 +5,7 @@ import { WORKBENCH_GREY } from './IconTile';
 import type { IconAssignment } from '../lib/theme/assignment';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconPreview } from '../lib/pipeline/preview';
+import { DEFAULT_ICON_SLOTS } from '../lib/output/defaultIconSlots';
 
 const folder: IconVariant = {
   name: 'folder', category: 'places', sizePx: 32, format: 'svg', zipPath: 'a/places/32/folder.svg',
@@ -41,56 +42,155 @@ describe('SelectedIconList', () => {
     expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'trashcan' });
   });
 
-  it('reports a default-icon role when tagged', () => {
-    const onAssignmentChange = vi.fn();
-    const assignments = new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]]);
+  const slotSelect = (name: string) => screen.getByLabelText(new RegExp(`default slot for ${name}`, 'i'));
+
+  it('leaves an untagged icon claiming no slot', () => {
     render(
-      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={onAssignmentChange} onRemove={() => {}} />,
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={() => {}} onRemove={() => {}}
+      />,
+    );
+    expect(slotSelect('folder')).toHaveValue('');
+  });
+
+  it('reports a default-icon role when a slot is picked', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
     );
 
-    // The label names the slot the icon fills, not the icon — but the accessible name
-    // still carries the icon's name, so two drawer rows stay tellable apart.
-    fireEvent.click(screen.getByLabelText(/use folder as the system default drawer icon/i));
+    fireEvent.change(slotSelect('folder'), { target: { value: 'drawer' } });
 
     expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'drawer', role: 'drawer' });
   });
 
-  it('labels the default-slot checkbox with the file it writes, not the icon name', () => {
-    const assignments = new Map<string, IconAssignment>([
-      [folder.zipPath, { kind: 'drawer' }],
-      [readme.zipPath, { kind: 'project' }],
-    ]);
+  /**
+   * DefIcons matches on the file's datatype, not on the DiskObject type byte, so a
+   * def_picture.info is an ordinary project icon. Snapping the kind to the slot the way
+   * the type fallbacks require would make every DefIcons choice silently retype the icon.
+   */
+  it('leaves the icon kind alone when a DefIcons slot is picked', () => {
+    const onAssignmentChange = vi.fn();
     render(
-      <SelectedIconList variants={[folder, readme]} assignments={assignments} onAssignmentChange={() => {}} onRemove={() => {}} />,
+      <SelectedIconList
+        variants={[readme]}
+        assignments={new Map<string, IconAssignment>([[readme.zipPath, { kind: 'project' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
     );
 
-    // There are five system-default slots and one icon fills each, so the label has to
-    // name the slot. "Use as system default for folder-music" named the icon, which
-    // told the user nothing about what ticking it would do.
-    expect(screen.getByText('def_drawer')).toBeInTheDocument();
-    expect(screen.getByText('def_project')).toBeInTheDocument();
+    fireEvent.change(slotSelect('text-x-generic'), { target: { value: 'picture' } });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'project', role: 'picture' });
   });
 
-  it('moves the slot label when the type changes', () => {
-    const assignments = new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]]);
-    const { rerender } = render(
-      <SelectedIconList variants={[folder]} assignments={assignments} onAssignmentChange={() => {}} onRemove={() => {}} />,
+  /**
+   * The five type fallbacks are the exception: icon.library finds them *by* the type
+   * byte, so a def_drawer.info carrying type 4 is never consulted as a drawer icon.
+   */
+  it('snaps the icon kind to a type-fallback slot', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[readme]}
+        assignments={new Map<string, IconAssignment>([[readme.zipPath, { kind: 'project' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
     );
-    expect(screen.getByText('def_drawer')).toBeInTheDocument();
 
-    rerender(
+    fireEvent.change(slotSelect('text-x-generic'), { target: { value: 'trashcan' } });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'trashcan', role: 'trashcan' });
+  });
+
+  it('clears the role, but not the kind, when the slot is set back to none', () => {
+    const onAssignmentChange = vi.fn();
+    render(
       <SelectedIconList
         variants={[folder]}
-        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'disk', role: 'disk' }]])}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer', role: 'drawer' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
+    );
+
+    fireEvent.change(slotSelect('folder'), { target: { value: '' } });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'drawer', role: undefined });
+  });
+
+  /**
+   * Retyping an icon that claims a type-fallback slot has to move the slot with it, or
+   * the row goes on claiming def_drawer while writing a disk icon into it. A DefIcons
+   * slot has no such tie and stays where the user put it.
+   */
+  it('retargets a type-fallback slot when the type changes', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer', role: 'drawer' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/type for folder/i), { target: { value: 'disk' } });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'disk', role: 'disk' });
+  });
+
+  it('leaves a DefIcons slot where it is when the type changes', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[readme]}
+        assignments={new Map<string, IconAssignment>([[readme.zipPath, { kind: 'project', role: 'picture' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/type for text-x-generic/i), { target: { value: 'tool' } });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'tool', role: 'picture' });
+  });
+
+  it('offers every slot in the catalogue, named for the file it writes', () => {
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
         onAssignmentChange={() => {}} onRemove={() => {}}
       />,
     );
 
-    // The slot is derived from the type rather than stored separately, so retyping an
-    // icon as a disk must retarget its default slot too — otherwise a ticked row would
-    // keep claiming def_drawer while writing a disk icon into it.
-    expect(screen.getByText('def_disk')).toBeInTheDocument();
-    expect(screen.queryByText('def_drawer')).not.toBeInTheDocument();
+    for (const slot of DEFAULT_ICON_SLOTS) {
+      expect(slotSelect('folder')).toContainHTML(`value="${slot.role}"`);
+    }
+    // The cryptic ones are unreadable without a gloss: def_i and def_h name nothing.
+    expect(screen.getByRole('option', { name: /def_h\b.*header/i })).toBeInTheDocument();
+  });
+
+  /**
+   * Thirty-three options in one flat list buries the five slots most users want behind
+   * two dozen file types they will never tag.
+   */
+  it('separates the type fallbacks from the DefIcons file types', () => {
+    const { container } = render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={() => {}} onRemove={() => {}}
+      />,
+    );
+
+    const groups = [...container.querySelectorAll('optgroup')].map((g) => g.label);
+    expect(groups).toHaveLength(2);
+    expect(groups.join(' ')).toMatch(/file type/i);
   });
 
   it('draws the normal and selected previews on a Workbench-grey ground', () => {

@@ -1,11 +1,11 @@
-/**
- * The five AmigaOS default-icon fallback slots (`ENVARC:Sys/def_*.info`).
- * Deliberately NOT `IconKind` from ../newicons/diskObject: that type models the
- * DiskObject type byte, which has eight legal values (device, kickstart and
- * appicon besides these five). The two sets coincide today but mean different
- * things, and widening IconKind must not widen this.
- */
-export type DefaultIconRole = 'drawer' | 'disk' | 'tool' | 'project' | 'trashcan';
+import { buildInstallerIcon } from './installerIcon';
+import {
+  INSTALLER_SCRIPT,
+  INSTALLER_SCRIPT_NAME,
+  SYS_DRAWER,
+} from './installerScript';
+
+import type { DefaultIconRole } from './defaultIconSlots';
 
 export interface ConvertedIcon {
   name: string;
@@ -27,21 +27,37 @@ export interface ArchiveEntry {
   bytes: Uint8Array;
 }
 
-const README_TEXT = `kde2amiga converted icons
+/**
+ * Written per archive rather than as one constant: an archive with nothing tagged as a
+ * default carries no `Sys/` drawer and no installer, and a README telling that user to
+ * double-click a file that is not there is worse than no README at all.
+ */
+function readmeText(hasDefaults: boolean): string {
+  const intro = `kde2amiga converted icons
 ==========================
 
 Each <name>.info file can be copied next to its matching drawer/file on your
 Amiga and used immediately.
+`;
 
-If any icons here were tagged as system-wide defaults, they're under Sys/
-(e.g. Sys/def_drawer.info). To make them take effect immediately, copy the
-contents of Sys/ to BOTH of these locations:
+  if (!hasDefaults) return intro;
+
+  return `${intro}
+The icons you tagged as system-wide defaults are under ${SYS_DRAWER}/ (for example
+${SYS_DRAWER}/def_drawer.info). To install them, double-click "${INSTALLER_SCRIPT_NAME}"
+in this drawer, or run it from a Shell:
+
+  execute "${INSTALLER_SCRIPT_NAME}"
+
+It copies them into BOTH of these locations:
 
   ENVARC:Sys/   (persists across reboots)
   ENV:Sys/      (the live copy Workbench and Directory Opus 5 read right now)
 
-Copying to ENVARC:Sys/ alone will only take effect after your next reboot.
+Copying to ENVARC:Sys/ alone would only take effect after your next reboot.
+Icons already drawn on screen keep their old look until then either way.
 `;
+}
 
 /**
  * Encodes text as ISO-8859-1, which is what AmigaOS reads — not UTF-8.
@@ -78,10 +94,21 @@ export function buildOutputEntries(
   for (const icon of icons) {
     entries.push({ path: at(`${icon.name}.info`), bytes: icon.infoBytes });
     if (icon.role) {
-      entries.push({ path: at(`Sys/def_${icon.role}.info`), bytes: icon.infoBytes });
+      entries.push({ path: at(`${SYS_DRAWER}/def_${icon.role}.info`), bytes: icon.infoBytes });
     }
   }
 
-  entries.push({ path: at('README.txt'), bytes: encodeLatin1(README_TEXT) });
+  /*
+   * The installer only ships alongside something to install. On an archive with no
+   * tagged defaults it would copy an absent drawer and still report success, which
+   * is a worse answer than not offering it.
+   */
+  const hasDefaults = icons.some((icon) => icon.role !== undefined);
+  if (hasDefaults) {
+    entries.push({ path: at(INSTALLER_SCRIPT_NAME), bytes: encodeLatin1(INSTALLER_SCRIPT) });
+    entries.push({ path: at(`${INSTALLER_SCRIPT_NAME}.info`), bytes: buildInstallerIcon() });
+  }
+
+  entries.push({ path: at('README.txt'), bytes: encodeLatin1(readmeText(hasDefaults)) });
   return entries;
 }

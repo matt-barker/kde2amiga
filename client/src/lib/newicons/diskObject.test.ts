@@ -132,4 +132,58 @@ describe('buildInfoFile', () => {
     expect(decoded.toolTypes[1]).toBe("*** DON'T EDIT THE FOLLOWING LINES!! ***");
     expect(decoded.toolTypes[2].startsWith('IM1=')).toBe(true);
   });
+
+  /**
+   * A project icon's do_DefaultTool is the program Workbench runs on double-click. The
+   * archive's "Install Default Icons" icon needs it set to IconX; every other icon we
+   * write leaves it empty, which is why it stayed hardcoded to 0 until now.
+   *
+   * The string is written between the select-render image and the ToolTypes array,
+   * which is where the .info layout puts it - get the order wrong and the decoder
+   * reads the DefaultTool's length field as the ToolTypes count.
+   */
+  it('round-trips a default tool alongside the NewIcons ToolTypes', () => {
+    const bytes = buildInfoFile({
+      width: 4,
+      height: 4,
+      kind: 'project',
+      normal: makeState(4, 4),
+      selected: makeState(4, 4),
+      defaultTool: 'IconX',
+    });
+    const decoded = decodeInfoFileForTest(bytes);
+
+    expect(decoded.defaultTool).toBe('IconX');
+    // The image payload has to survive the insertion, not just the string itself.
+    expect(decoded.normal.pixels).toEqual(makeState(4, 4).pixels);
+    expect(decoded.toolTypes.filter((t) => t.startsWith('IM1=')).length).toBeGreaterThan(0);
+  });
+
+  it('writes no default tool, and no space for one, when none is asked for', () => {
+    const decoded = decodeInfoFileForTest(
+      buildInfoFile({
+        width: 4,
+        height: 4,
+        kind: 'project',
+        normal: makeState(4, 4),
+        selected: makeState(4, 4),
+      }),
+    );
+    expect(decoded.defaultTool).toBeUndefined();
+  });
+
+  it('round-trips a default tool on a drawer icon, whose DrawerData shifts every offset', () => {
+    const decoded = decodeInfoFileForTest(
+      buildInfoFile({
+        width: 4,
+        height: 4,
+        kind: 'drawer',
+        normal: makeState(4, 4),
+        selected: makeState(4, 4),
+        defaultTool: 'SYS:Tools/IconX',
+      }),
+    );
+    expect(decoded.defaultTool).toBe('SYS:Tools/IconX');
+    expect(decoded.type).toBe(2);
+  });
 });

@@ -9,9 +9,10 @@ import {
   mkdirSync,
   existsSync,
   readdirSync,
+  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { buildOutputZip } from './zipBuilder';
 import { ARCHIVE_BASE_NAME } from './outputEntries';
 import { buildOutputLha } from './lhaBuilder';
@@ -43,6 +44,26 @@ async function unpackZip(icons: ConvertedIcon[]): Promise<Map<string, Uint8Array
   return out;
 }
 
+/** Every file under `root`, keyed by its path relative to `root` with `/` separators. */
+function walk(root: string, at = root, into = new Map<string, Uint8Array>()): Map<string, Uint8Array> {
+  for (const name of readdirSync(at)) {
+    const path = join(at, name);
+    if (statSync(path).isDirectory()) walk(root, path, into);
+    else into.set(relative(root, path).split(sep).join('/'), new Uint8Array(readFileSync(path)));
+  }
+  return into;
+}
+
+/**
+ * Walks what Lhasa extracted rather than parsing what `lha l` prints.
+ *
+ * The listing used to be the source of truth here, on the grounds that it also proved
+ * the paths Lhasa reports are the ones we meant. It cannot be: its filename column is
+ * whitespace-delimited, so `Install Default Icons.info` came back as `Icons.info`, and
+ * the extension filter that went with it dropped the extensionless installer script from
+ * the comparison altogether — the two formats could have disagreed about it in silence.
+ * `lhaListing` below keeps the reporting check, without it deciding what gets compared.
+ */
 async function unpackLha(icons: ConvertedIcon[]): Promise<Map<string, Uint8Array>> {
   const dir = mkdtempSync(join(tmpdir(), 'kde2amiga-parity-'));
   const archivePath = join(dir, 'icons.lha');
@@ -52,16 +73,14 @@ async function unpackLha(icons: ConvertedIcon[]): Promise<Map<string, Uint8Array
   const out = join(dir, 'out');
   mkdirSync(out);
   execFileSync(LHA, [`xw=${out}`, archivePath], { stdio: 'pipe' });
+  return walk(out);
+}
 
-  // Listing rather than walking: it also proves the paths Lhasa reports are the ones we
-  // meant, including the Sys/ nesting carried in the directory extended header.
-  const listing = execFileSync(LHA, ['l', archivePath], { encoding: 'utf8' });
-  const paths = listing
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/).pop() ?? '')
-    .filter((name) => name.endsWith('.info') || name.endsWith('.txt'));
-
-  return new Map(paths.map((path) => [path, new Uint8Array(readFileSync(join(out, path)))]));
+async function lhaListing(icons: ConvertedIcon[]): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'kde2amiga-listing-'));
+  const archivePath = join(dir, 'icons.lha');
+  writeFileSync(archivePath, new Uint8Array(await buildOutputLha(icons).arrayBuffer()));
+  return execFileSync(LHA, ['l', archivePath], { encoding: 'utf8' });
 }
 
 describe('zip and LHA parity, verified by Lhasa', () => {
@@ -100,6 +119,25 @@ describe('zip and LHA parity, verified by Lhasa', () => {
   it('names that drawer after the archive, so renaming the download renames the drawer', async () => {
     const lha = await unpackLha(ICONS);
     for (const path of lha.keys()) expect(path.startsWith(`${ARCHIVE_BASE_NAME}/`)).toBe(true);
+  });
+
+  /**
+   * Kept from the version of `unpackLha` that read the listing: the paths Lhasa *reports*
+   * should be the ones we meant, Sys/ nesting and spaces included.
+   */
+  it('reports every extracted path in its own listing', async () => {
+    const [listing, lha] = [await lhaListing(ICONS), await unpackLha(ICONS)];
+    for (const path of lha.keys()) expect(listing).toContain(path);
+  });
+
+  it('carries the installer script and its icon through the LHA with their spaces intact', async () => {
+    const lha = await unpackLha(ICONS);
+    expect([...lha.keys()]).toEqual(
+      expect.arrayContaining([
+        `${ARCHIVE_BASE_NAME}/Install Default Icons`,
+        `${ARCHIVE_BASE_NAME}/Install Default Icons.info`,
+      ]),
+    );
   });
 
   it('carries the system-default icons under Sys/ in the LHA too', async () => {

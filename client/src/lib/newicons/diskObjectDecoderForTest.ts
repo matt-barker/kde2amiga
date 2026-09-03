@@ -179,7 +179,7 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
   skipClassicImage(r);
   if (selectRender) skipClassicImage(r);
 
-  if (hasDefaultTool) readText(r);
+  const defaultTool = hasDefaultTool ? readText(r) : undefined;
 
   const toolTypes: string[] = [];
   if (hasToolTypes) {
@@ -201,6 +201,8 @@ export function decodeInfoFileForTest(bytes: Uint8Array) {
     type,
     width,
     height,
+    /** do_DefaultTool, or undefined when the icon carries none. */
+    defaultTool,
     toolTypes,
     /** IM1= payloads with the 4-character prefix stripped, in file order. */
     im1Lines,

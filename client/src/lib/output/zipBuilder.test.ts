@@ -24,7 +24,9 @@ describe('buildOutputZip', () => {
   });
 
   it('includes a README explaining how to install Sys/ contents', async () => {
-    const blob = await buildOutputZip([{ name: 'folder', infoBytes: new Uint8Array([1]) }]);
+    const blob = await buildOutputZip([
+      { name: 'folder', infoBytes: new Uint8Array([1]), role: 'drawer' },
+    ]);
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     const readme = await zip.file(`${ARCHIVE_BASE_NAME}/README.txt`)?.async('string');
     expect(readme).toMatch(/ENVARC:Sys/);

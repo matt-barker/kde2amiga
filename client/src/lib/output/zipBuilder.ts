@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { buildOutputEntries, type ConvertedIcon } from './outputEntries';
 
-export type { DefaultIconRole, ConvertedIcon } from './outputEntries';
+export type { ConvertedIcon } from './outputEntries';
 
 export async function buildOutputZip(icons: ConvertedIcon[]): Promise<Blob> {
   const zip = new JSZip();

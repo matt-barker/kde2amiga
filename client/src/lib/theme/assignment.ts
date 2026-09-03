@@ -1,12 +1,18 @@
 import type { IconKind } from '../newicons/diskObject';
-import type { DefaultIconRole } from '../output/zipBuilder';
+import type { DefaultIconRole } from '../output/defaultIconSlots';
 import type { IconVariant } from './themeParser';
 import { inferIconKind } from './iconKind';
 
 /** What the user has decided a selected icon should become on the Amiga. */
 export interface IconAssignment {
   kind: IconKind;
-  /** Set only when this icon is also to be installed as an `ENVARC:Sys/def_*.info`. */
+  /**
+   * The `ENVARC:Sys/def_*.info` slot this icon also fills, or undefined for most icons.
+   *
+   * Independent of `kind`, unlike the five-slot version this replaced: DefIcons matches
+   * on the file's datatype rather than the DiskObject type byte, so `def_picture` is an
+   * ordinary project icon. `defaultIconSlots` says which of the two a slot belongs to.
+   */
   role?: DefaultIconRole;
 }
 

@@ -106,11 +106,12 @@
   white-space: nowrap;
 }
 
-.selected__role label {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text);
-  margin-left: 6px;
+/*
+ * The slot names are long enough ("def_officedocs - Office document") to stretch the
+ * table past the viewport if the select is left to size itself to its widest option.
+ */
+.selected__role select {
+  max-width: 220px;
 }
 
 .selected__note {
