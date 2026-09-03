@@ -12,7 +12,7 @@ import {
   type SelectedStateEffect,
 } from '../image/selectedState';
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
-import { buildOutputZip, type ConvertedIcon } from '../output/zipBuilder';
+import type { ConvertedIcon } from '../output/outputEntries';
 
 export interface JobIconInput {
   icon: IconVariant;
@@ -157,12 +157,20 @@ export function prepareIcon(decoded: RgbaImage, config: JobConfig): PreparedIcon
   return { palette, normal, selected, width: image.width, height: image.height };
 }
 
+/**
+ * Converts the selected icons, and stops there.
+ *
+ * It deliberately returns icons rather than an archive: conversion is the slow half —
+ * rasterising, quantising and encoding every icon — while packing is cheap, and the UI
+ * offers both a zip and an LHA of the same run. Returning a single format here would
+ * mean either converting twice or picking the format before the user does.
+ */
 export async function runConversionJob(
   zip: JSZip,
   inputs: JobIconInput[],
   config: JobConfig,
   onProgress?: (done: number, total: number) => void,
-): Promise<Blob> {
+): Promise<ConvertedIcon[]> {
   const decoded: Array<{ input: JobIconInput; image: RgbaImage }> = [];
 
   let attempted = 0;
@@ -195,5 +203,5 @@ export async function runConversionJob(
     return { name: input.icon.name, infoBytes, role: input.role };
   });
 
-  return buildOutputZip(convertedIcons);
+  return convertedIcons;
 }

@@ -136,19 +136,18 @@ describe('preview / conversion pixel identity', () => {
     const variants = [variant('a'), variant('b')];
 
     const previews = await buildPreviews(zip, variants, config);
-    const outputBlob = await runConversionJob(
+    const converted = await runConversionJob(
       zip,
       variants.map((icon) => ({ icon, kind: 'project' as const })),
       config,
     );
-    const parsed = await JSZip.loadAsync(await outputBlob.arrayBuffer());
 
     expect(previews).toHaveLength(2);
 
     for (const v of variants) {
-      const entry = parsed.file(`${v.name}.info`);
-      expect(entry).not.toBeNull();
-      const decoded = decodeInfoFileForTest(await entry!.async('uint8array'));
+      const entry = converted.find((icon) => icon.name === v.name);
+      expect(entry).toBeDefined();
+      const decoded = decodeInfoFileForTest(entry!.infoBytes);
       const preview = previews.find((p) => p.zipPath === v.zipPath)!;
 
       expect([decoded.width, decoded.height]).toEqual([preview.width, preview.height]);
