@@ -2,10 +2,18 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import JSZip from 'jszip';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOutputZip } from './zipBuilder';
+import { ARCHIVE_BASE_NAME } from './outputEntries';
 import { buildOutputLha } from './lhaBuilder';
 import type { ConvertedIcon } from './outputEntries';
 
@@ -73,10 +81,34 @@ describe('zip and LHA parity, verified by Lhasa', () => {
     for (const [path, bytes] of zip) expect(lha.get(path)).toEqual(bytes);
   });
 
+  /**
+   * The bug this drawer exists to stop, checked the way it was found: `lha x` extracts
+   * into the current directory, so a flat archive scatters every .info file across
+   * whatever drawer the user ran it from. Verified with the real binary, not our reader.
+   */
+  it('extracts into exactly one drawer rather than scattering files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kde2amiga-drawer-'));
+    writeFileSync(join(dir, 'icons.lha'), new Uint8Array(await buildOutputLha(ICONS).arrayBuffer()));
+
+    // `xw=` is deliberately not used: this reproduces a bare `lha x` in the current
+    // directory, which is exactly how the scattering was reported.
+    execFileSync(LHA, ['x', join(dir, 'icons.lha')], { cwd: dir, stdio: 'pipe' });
+
+    expect(readdirSync(dir).filter((name) => name !== 'icons.lha')).toEqual([ARCHIVE_BASE_NAME]);
+  });
+
+  it('names that drawer after the archive, so renaming the download renames the drawer', async () => {
+    const lha = await unpackLha(ICONS);
+    for (const path of lha.keys()) expect(path.startsWith(`${ARCHIVE_BASE_NAME}/`)).toBe(true);
+  });
+
   it('carries the system-default icons under Sys/ in the LHA too', async () => {
     const lha = await unpackLha(ICONS);
     expect([...lha.keys()]).toEqual(
-      expect.arrayContaining(['Sys/def_drawer.info', 'Sys/def_trashcan.info']),
+      expect.arrayContaining([
+        `${ARCHIVE_BASE_NAME}/Sys/def_drawer.info`,
+        `${ARCHIVE_BASE_NAME}/Sys/def_trashcan.info`,
+      ]),
     );
   });
 });

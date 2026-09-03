@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import App from './App';
 import { runConversionJob, DEFAULT_JOB_CONFIG } from './lib/pipeline/convertJob';
 import { buildPreviews } from './lib/pipeline/preview';
+import { ARCHIVE_BASE_NAME } from './lib/output/outputEntries';
 
 vi.mock('./lib/pipeline/convertJob', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/pipeline/convertJob')>();
@@ -137,10 +138,12 @@ describe('App end-to-end', () => {
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
     const lha = await screen.findByRole('link', { name: /download lha/i }, { timeout: 5000 });
-    expect(lha).toHaveAttribute('download', 'kde2amiga-icons.lha');
+    // Against the constant, not a literal: renaming the download is meant to rename the
+    // drawer inside both archives with it, and this is what notices if it stops doing so.
+    expect(lha).toHaveAttribute('download', `${ARCHIVE_BASE_NAME}.lha`);
     expect(screen.getByRole('link', { name: /download zip/i })).toHaveAttribute(
       'download',
-      'kde2amiga-icons.zip',
+      `${ARCHIVE_BASE_NAME}.zip`,
     );
   });
 

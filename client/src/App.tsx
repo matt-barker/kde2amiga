@@ -14,6 +14,7 @@ import {
 } from './lib/pipeline/convertJob';
 import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
 import { buildOutputZip } from './lib/output/zipBuilder';
+import { ARCHIVE_BASE_NAME } from './lib/output/outputEntries';
 import { buildOutputLha } from './lib/output/lhaBuilder';
 import './App.css';
 
@@ -331,14 +332,24 @@ export default function App() {
             )}
             {downloads && (
               <>
-                <a className="actions__download" href={downloads.zip} download="kde2amiga-icons.zip">
+                <a
+                  className="actions__download"
+                  href={downloads.zip}
+                  download={`${ARCHIVE_BASE_NAME}.zip`}
+                >
                   Download Zip
                 </a>
                 {/*
                   LHA is the one an Amiga can open unaided: AmigaOS ships no unzip, while
                   LhA is on essentially every machine and Directory Opus 5 reads it directly.
+                  Both archives unpack into a drawer of this same name — see ARCHIVE_BASE_NAME,
+                  which is the one place to rename either download.
                 */}
-                <a className="actions__download" href={downloads.lha} download="kde2amiga-icons.lha">
+                <a
+                  className="actions__download"
+                  href={downloads.lha}
+                  download={`${ARCHIVE_BASE_NAME}.lha`}
+                >
                   Download LHA
                 </a>
               </>

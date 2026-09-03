@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildOutputLha } from './lhaBuilder';
+import { ARCHIVE_BASE_NAME } from './outputEntries';
 
 /**
  * Content-level checks only. That the bytes are a *valid* LHA archive is settled in
@@ -24,5 +25,10 @@ describe('buildOutputLha', () => {
     expect(text).toContain('folder.info');
     expect(text).toContain('def_drawer.info');
     expect(text).toContain('README.txt');
+    // A level-1 header keeps the directory in a type-0x02 extended header, separated by
+    // 0xFF rather than '/', so the drawer is searched for the way the format stores it.
+    // Whether it *extracts* to the right place is the oracle test's job, not this one's.
+    expect(text).toContain(`${ARCHIVE_BASE_NAME}\xff`);
+    expect(text).toContain(`${ARCHIVE_BASE_NAME}\xffSys\xff`);
   });
 });

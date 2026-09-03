@@ -13,6 +13,14 @@ export interface ConvertedIcon {
   role?: DefaultIconRole;
 }
 
+/**
+ * The name both downloads are offered under, and the drawer everything sits in inside
+ * them. One constant because the two must agree: `lha x` extracts into the current
+ * directory, so the drawer is what stops an archive scattering itself, and a user who
+ * unpacks `kde2amiga-icons.lha` expects a `kde2amiga-icons` drawer to appear.
+ */
+export const ARCHIVE_BASE_NAME = 'kde2amiga-icons';
+
 /** One file in an output archive. Shaped to drop straight into either builder. */
 export interface ArchiveEntry {
   path: string;
@@ -52,20 +60,28 @@ function encodeLatin1(text: string): Uint8Array {
 /**
  * The file layout of an output archive, independent of how it gets packed.
  *
+ * Everything is nested in a single drawer named for the archive. `lha x` and most unzip
+ * tools extract into the current directory, so a flat archive drops hundreds of loose
+ * `.info` files into whatever drawer the user was sitting in.
+ *
  * Kept out of both the zip and the LHA builder on purpose: the two formats have to
  * offer byte-for-byte the same files, and a layout each one worked out separately is
  * exactly the sort of thing that drifts once only one of them is touched.
  */
-export function buildOutputEntries(icons: ConvertedIcon[]): ArchiveEntry[] {
+export function buildOutputEntries(
+  icons: ConvertedIcon[],
+  rootName: string = ARCHIVE_BASE_NAME,
+): ArchiveEntry[] {
   const entries: ArchiveEntry[] = [];
+  const at = (path: string) => `${rootName}/${path}`;
 
   for (const icon of icons) {
-    entries.push({ path: `${icon.name}.info`, bytes: icon.infoBytes });
+    entries.push({ path: at(`${icon.name}.info`), bytes: icon.infoBytes });
     if (icon.role) {
-      entries.push({ path: `Sys/def_${icon.role}.info`, bytes: icon.infoBytes });
+      entries.push({ path: at(`Sys/def_${icon.role}.info`), bytes: icon.infoBytes });
     }
   }
 
-  entries.push({ path: 'README.txt', bytes: encodeLatin1(README_TEXT) });
+  entries.push({ path: at('README.txt'), bytes: encodeLatin1(README_TEXT) });
   return entries;
 }
