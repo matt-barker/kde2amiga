@@ -13,6 +13,8 @@ import {
   type JobIconInput,
 } from './lib/pipeline/convertJob';
 import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
+import { buildOutputZip } from './lib/output/zipBuilder';
+import { buildOutputLha } from './lib/output/lhaBuilder';
 import './App.css';
 
 // A single shared instance so it doesn't cause a fresh Map identity every render.
@@ -86,7 +88,9 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignments, setAssignments] = useState<Map<string, IconAssignment>>(new Map());
   const [config, setConfig] = useState<JobConfig>(DEFAULT_JOB_CONFIG);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  // Both archives are built from one conversion run and held as object URLs together, so
+  // they are always the same icons and are revoked as a pair.
+  const [downloads, setDownloads] = useState<{ zip: string; lha: string } | null>(null);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -220,6 +224,18 @@ export default function App() {
     handleSelectionChange(next);
   }
 
+  /**
+   * Releases both archive URLs together.
+   *
+   * They are only ever created as a pair, so releasing one without the other would leak
+   * the survivor for the lifetime of the page — and an icon batch is megabytes.
+   */
+  function revokeDownloads() {
+    if (!downloads) return;
+    URL.revokeObjectURL(downloads.zip);
+    URL.revokeObjectURL(downloads.lha);
+  }
+
   function handleThemeLoaded(loadedZip: JSZip, loadedGroups: IconGroup[]) {
     setZip(loadedZip);
     setGroups(loadedGroups);
@@ -228,8 +244,8 @@ export default function App() {
     // zipPaths are archive-relative, so a new theme can reuse the exact paths of the
     // last one — carrying assignments forward would silently mislabel a different icon.
     setAssignments(new Map());
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    setDownloadUrl(null);
+    revokeDownloads();
+    setDownloads(null);
     setError(null);
   }
 
@@ -257,9 +273,17 @@ export default function App() {
     setError(null);
     setProgress({ done: 0, total: 0 });
     try {
-      const blob = await runConversionJob(zip, inputs, config, (done, total) => setProgress({ done, total }));
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-      setDownloadUrl(URL.createObjectURL(blob));
+      const converted = await runConversionJob(zip, inputs, config, (done, total) =>
+        setProgress({ done, total }),
+      );
+      // Packing is cheap next to the conversion above, so both formats are built now and
+      // the user picks afterwards rather than before.
+      const [zipBlob, lhaBlob] = [await buildOutputZip(converted), buildOutputLha(converted)];
+      revokeDownloads();
+      setDownloads({
+        zip: URL.createObjectURL(zipBlob),
+        lha: URL.createObjectURL(lhaBlob),
+      });
     } catch (err) {
       setError(`Conversion failed: ${(err as Error).message}`);
     } finally {
@@ -305,10 +329,19 @@ export default function App() {
             {converting && progress && progress.total > 0 && (
               <p>Converting {progress.done} of {progress.total}…</p>
             )}
-            {downloadUrl && (
-              <a className="actions__download" href={downloadUrl} download="kde2amiga-icons.zip">
-                Download
-              </a>
+            {downloads && (
+              <>
+                <a className="actions__download" href={downloads.zip} download="kde2amiga-icons.zip">
+                  Download Zip
+                </a>
+                {/*
+                  LHA is the one an Amiga can open unaided: AmigaOS ships no unzip, while
+                  LhA is on essentially every machine and Directory Opus 5 reads it directly.
+                */}
+                <a className="actions__download" href={downloads.lha} download="kde2amiga-icons.lha">
+                  Download LHA
+                </a>
+              </>
             )}
           </div>
         </>

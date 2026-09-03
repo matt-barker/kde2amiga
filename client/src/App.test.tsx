@@ -112,7 +112,7 @@ function galleryVariantCheckbox(groupName: string, variantLabel: string): HTMLEl
 }
 
 describe('App end-to-end', () => {
-  it('loads a theme, selects an icon, converts it, and enables download', async () => {
+  it('loads a theme, selects an icon, converts it, and offers both archive formats', async () => {
     render(<App />);
 
     const file = await makeThemeZipFile();
@@ -122,12 +122,29 @@ describe('App end-to-end', () => {
     fireEvent.click(galleryCheckboxFor('folder'));
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
-    await waitFor(() => expect(screen.getByRole('link', { name: /download/i })).toBeInTheDocument(), {
+    await waitFor(() => expect(screen.getByRole('link', { name: /download zip/i })).toBeInTheDocument(), {
       timeout: 5000,
     });
+    expect(screen.getByRole('link', { name: /download lha/i })).toBeInTheDocument();
   });
 
-  it('shows an error and no download link when conversion fails', async () => {
+  it('offers the LHA download under a .lha filename', async () => {
+    render(<App />);
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox', { name: /folder/i }));
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    const lha = await screen.findByRole('link', { name: /download lha/i }, { timeout: 5000 });
+    expect(lha).toHaveAttribute('download', 'kde2amiga-icons.lha');
+    expect(screen.getByRole('link', { name: /download zip/i })).toHaveAttribute(
+      'download',
+      'kde2amiga-icons.zip',
+    );
+  });
+
+  it('shows an error and no download links when conversion fails', async () => {
     vi.mocked(runConversionJob).mockRejectedValueOnce(new Error('boom'));
 
     render(<App />);
@@ -253,22 +270,22 @@ describe('App end-to-end', () => {
     fireEvent.click(galleryVariantCheckbox('folder-wine', 'places 48'));
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
 
-    await waitFor(() => expect(screen.getByRole('link', { name: /download/i })).toBeInTheDocument(), {
+    await waitFor(() => expect(screen.getByRole('link', { name: /download zip/i })).toBeInTheDocument(), {
       timeout: 5000,
     });
 
     // The job is handed one input per surviving selection — the sibling that was
-    // replaced must never reach it. (Asserting only the zip's contents would pass
-    // vacuously: zipBuilder writes `${name}.info`, so a second sibling would simply
+    // replaced must never reach it. (Asserting only the archive's contents would pass
+    // vacuously: outputEntries writes `${name}.info`, so a second sibling would simply
     // overwrite the first and the count would still be one. That silent overwrite is
     // exactly the bug.)
     const [, inputs] = vi.mocked(runConversionJob).mock.calls.at(-1)!;
     expect(inputs.map((input) => input.icon.zipPath)).toEqual(['48x48/places/folder-wine.svg']);
 
-    const blob = (await vi.mocked(runConversionJob).mock.results.at(-1)!.value) as Blob;
-    const parsed = await JSZip.loadAsync(await blob.arrayBuffer());
-    const infoNames = Object.keys(parsed.files).filter((name) => name.endsWith('.info'));
-    expect(infoNames).toEqual(['folder-wine.info']);
+    const converted = (await vi.mocked(runConversionJob).mock.results.at(-1)!.value) as Array<{
+      name: string;
+    }>;
+    expect(converted.map((icon) => icon.name)).toEqual(['folder-wine']);
   });
 
   it('refuses to convert when two icons claim the same system default role', async () => {

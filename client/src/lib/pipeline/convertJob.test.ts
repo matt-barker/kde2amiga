@@ -11,7 +11,7 @@ import { glowRadiusFor, glowRamp, GLOWICONS_RAMP } from '../image/selectedState'
 import type { IconVariant } from '../theme/themeParser';
 
 describe('runConversionJob', () => {
-  it('produces a zip containing one .info file per input icon', async () => {
+  it('returns one converted icon per input, carrying any system-default role', async () => {
     const zip = new JSZip();
     zip.file('scalable/places/folder.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#0000ff"/></svg>');
     zip.file('scalable/apps/firefox.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#ff8800"/></svg>');
@@ -19,7 +19,7 @@ describe('runConversionJob', () => {
     const folderIcon: IconVariant = { name: 'folder', category: 'places', sizePx: 0, format: 'svg', zipPath: 'scalable/places/folder.svg' };
     const firefoxIcon: IconVariant = { name: 'firefox', category: 'apps', sizePx: 0, format: 'svg', zipPath: 'scalable/apps/firefox.svg' };
 
-    const outputZip = await runConversionJob(
+    const converted = await runConversionJob(
       zip,
       [
         { icon: folderIcon, kind: 'drawer', role: 'drawer' },
@@ -28,10 +28,12 @@ describe('runConversionJob', () => {
       { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' },
     );
 
-    const parsed = await JSZip.loadAsync(await outputZip.arrayBuffer());
-    expect(parsed.file('folder.info')).not.toBeNull();
-    expect(parsed.file('firefox.info')).not.toBeNull();
-    expect(parsed.file('Sys/def_drawer.info')).not.toBeNull();
+    // The job stops at converted icons now; turning those into archive paths belongs to
+    // outputEntries, which both the zip and the LHA builder share.
+    expect(converted.map((icon) => icon.name)).toEqual(['folder', 'firefox']);
+    expect(converted.find((icon) => icon.name === 'folder')?.role).toBe('drawer');
+    expect(converted.find((icon) => icon.name === 'firefox')?.role).toBeUndefined();
+    expect(converted.every((icon) => icon.infoBytes.length > 0)).toBe(true);
   });
 
   it('skips an icon that fails to decode without aborting the batch', async () => {
@@ -43,16 +45,14 @@ describe('runConversionJob', () => {
     const okIcon: IconVariant = { name: 'ok', category: 'apps', sizePx: 0, format: 'svg', zipPath: 'scalable/apps/ok.svg' };
 
     const progressLog: Array<[number, number]> = [];
-    const outputZip = await runConversionJob(
+    const converted = await runConversionJob(
       zip,
       [{ icon: brokenIcon, kind: 'tool' }, { icon: okIcon, kind: 'tool' }],
       { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' },
       (done, total) => progressLog.push([done, total]),
     );
 
-    const parsed = await JSZip.loadAsync(await outputZip.arrayBuffer());
-    expect(parsed.file('ok.info')).not.toBeNull();
-    expect(parsed.file('broken.info')).toBeNull();
+    expect(converted.map((icon) => icon.name)).toEqual(['ok']);
     expect(progressLog[progressLog.length - 1]).toEqual([2, 2]);
   });
 
