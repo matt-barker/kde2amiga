@@ -1,5 +1,8 @@
 import { buildInstallerIcon } from './installerIcon';
+import type { InstallerFiles } from './installerBinary';
 import {
+  INSTALLER_BINARY_NAME,
+  INSTALLER_LICENSE_NAME,
   INSTALLER_SCRIPT_NAME,
   SYS_DRAWER,
   buildInstallerScript,
@@ -102,6 +105,14 @@ To install, double-click "${INSTALLER_SCRIPT_NAME}" in this drawer, or run it
 from a Shell in this drawer:
 
   Installer "${INSTALLER_SCRIPT_NAME}"
+
+Installer and Installer project icon
+(c) Copyright 1995-96 Escom AG.  All Rights Reserved.
+Reproduced and distributed under license from Escom AG.
+
+INSTALLER SOFTWARE IS PROVIDED "AS-IS" AND SUBJECT TO CHANGE; NO WARRANTIES
+ARE MADE.  ALL USE IS AT YOUR OWN RISK.  NO LIABILITY OR RESPONSIBILITY IS
+ASSUMED.
 `;
   }
 
@@ -155,10 +166,24 @@ function infoFor(
  * offer byte-for-byte the same files, and a layout each one worked out separately is
  * exactly the sort of thing that drifts once only one of them is touched.
  */
+export interface OutputOptions {
+  /** The drawer everything nests in; also the download's filename. */
+  rootName?: string;
+  /**
+   * The bundled Installer, or undefined to leave it out.
+   *
+   * Optional so the layout stays a pure function testable with a stub — the real bytes
+   * arrive over the network, and threading a fetch through here would make every layout
+   * test asynchronous for no gain.
+   */
+  installer?: InstallerFiles;
+}
+
 export function buildOutputEntries(
   icons: ConvertedIcon[],
-  rootName: string = ARCHIVE_BASE_NAME,
+  options: OutputOptions = {},
 ): ArchiveEntry[] {
+  const rootName = options.rootName ?? ARCHIVE_BASE_NAME;
   const entries: ArchiveEntry[] = [];
   const at = (path: string) => `${rootName}/${path}`;
 
@@ -196,6 +221,11 @@ export function buildOutputEntries(
     const script = buildInstallerScript({ hasDefaults, drawers });
     entries.push({ path: at(INSTALLER_SCRIPT_NAME), bytes: encodeLatin1(script) });
     entries.push({ path: at(`${INSTALLER_SCRIPT_NAME}.info`), bytes: buildInstallerIcon() });
+
+    if (options.installer) {
+      entries.push({ path: at(INSTALLER_BINARY_NAME), bytes: options.installer.binary });
+      entries.push({ path: at(INSTALLER_LICENSE_NAME), bytes: options.installer.license });
+    }
   }
 
   entries.push({

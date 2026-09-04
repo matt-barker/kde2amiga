@@ -16,6 +16,15 @@ vi.mock('./lib/pipeline/preview', async (importOriginal) => {
   return { ...actual, buildPreviews: vi.fn(actual.buildPreviews) };
 });
 
+// The real loader fetches from the dev-server-only /installer/ route, which jsdom has
+// nothing to serve; every test here cares about conversion, not the Installer bytes.
+vi.mock('./lib/output/installerBinary', () => ({
+  loadInstallerFiles: vi.fn(async () => ({
+    binary: new Uint8Array([0x00, 0x00, 0x03, 0xf3]),
+    license: new Uint8Array([0x4c, 0x49, 0x43]),
+  })),
+}));
+
 async function makeThemeZipFile(): Promise<File> {
   const zip = new JSZip();
   zip.file(

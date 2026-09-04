@@ -1,4 +1,4 @@
-import { buildOutputEntries, type ConvertedIcon } from './outputEntries';
+import { buildOutputEntries, type ConvertedIcon, type OutputOptions } from './outputEntries';
 import { buildLhaArchive } from './lha/lhaWriter';
 
 /**
@@ -8,7 +8,7 @@ import { buildLhaArchive } from './lha/lhaWriter';
  * essentially every Amiga and Directory Opus 5 reads it directly — so this is the
  * archive that can be unpacked on the target without fetching a tool first.
  */
-export function buildOutputLha(icons: ConvertedIcon[]): Blob {
-  const archive = buildLhaArchive(buildOutputEntries(icons));
+export function buildOutputLha(icons: ConvertedIcon[], options?: OutputOptions): Blob {
+  const archive = buildLhaArchive(buildOutputEntries(icons, options));
   return new Blob([archive as BlobPart], { type: 'application/x-lzh-compressed' });
 }

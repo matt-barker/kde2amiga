@@ -16,6 +16,7 @@ import { buildPreviews, type IconPreview } from './lib/pipeline/preview';
 import { buildOutputZip } from './lib/output/zipBuilder';
 import { ARCHIVE_BASE_NAME } from './lib/output/outputEntries';
 import { buildOutputLha } from './lib/output/lhaBuilder';
+import { loadInstallerFiles } from './lib/output/installerBinary';
 import './App.css';
 
 // A single shared instance so it doesn't cause a fresh Map identity every render.
@@ -277,9 +278,15 @@ export default function App() {
       const converted = await runConversionJob(zip, inputs, config, (done, total) =>
         setProgress({ done, total }),
       );
+      // Fetched here rather than at startup so a user who never converts never pays for
+      // it, and so a failure surfaces as a conversion error rather than a silent gap.
+      const installer = await loadInstallerFiles();
       // Packing is cheap next to the conversion above, so both formats are built now and
       // the user picks afterwards rather than before.
-      const [zipBlob, lhaBlob] = [await buildOutputZip(converted), buildOutputLha(converted)];
+      const [zipBlob, lhaBlob] = [
+        await buildOutputZip(converted, { installer }),
+        buildOutputLha(converted, { installer }),
+      ];
       revokeDownloads();
       setDownloads({
         zip: URL.createObjectURL(zipBlob),

@@ -38,7 +38,12 @@ function icon(overrides: Partial<ConvertedIcon> = {}): ConvertedIcon {
 const pathsOf = (
   icons: Parameters<typeof buildOutputEntries>[0],
   rootName?: string,
-) => buildOutputEntries(icons, rootName).map((entry) => entry.path);
+) => buildOutputEntries(icons, rootName ? { rootName } : undefined).map((entry) => entry.path);
+
+const installer = {
+  binary: new Uint8Array([0x00, 0x00, 0x03, 0xf3]),
+  license: new Uint8Array([0x4c, 0x49, 0x43]),
+};
 
 /**
  * The layout both archive formats share. It lives apart from either builder so the zip
@@ -246,6 +251,44 @@ describe('the installer script', () => {
     for (const path of pathsOf(withRole)) {
       expect(path.startsWith(`${ARCHIVE_BASE_NAME}/`)).toBe(true);
     }
+  });
+
+  it('ships the Installer and its licence beside the script', () => {
+    const paths = buildOutputEntries([icon({ role: 'drawer' })], { installer }).map((e) => e.path);
+
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        `${ARCHIVE_BASE_NAME}/Installer`,
+        `${ARCHIVE_BASE_NAME}/Installer.license`,
+      ]),
+    );
+  });
+
+  it('copies the Installer binary through byte for byte', () => {
+    const entry = buildOutputEntries([icon({ role: 'drawer' })], { installer }).find(
+      (e) => e.path.endsWith('/Installer'),
+    );
+    expect(entry!.bytes).toEqual(installer.binary);
+  });
+
+  /**
+   * Nothing to install means no script, so shipping a 110KB executable with it would be
+   * 110KB of nothing.
+   */
+  it('ships no Installer when there is nothing to install', () => {
+    const paths = buildOutputEntries([icon()], { installer }).map((e) => e.path);
+    expect(paths.some((path) => path.endsWith('/Installer'))).toBe(false);
+  });
+
+  it('carries the Escom copyright notice and disclaimer in the README', () => {
+    const readme = buildOutputEntries([icon({ role: 'drawer' })], { installer }).find((e) =>
+      e.path.endsWith('README.txt'),
+    );
+    const text = textOf(readme!.bytes);
+
+    expect(text).toContain('(c) Copyright 1995-96 Escom AG.  All Rights Reserved.');
+    expect(text).toContain('Reproduced and distributed under license from Escom AG.');
+    expect(text).toContain('INSTALLER SOFTWARE IS PROVIDED "AS-IS"');
   });
 });
 

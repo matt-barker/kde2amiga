@@ -9,3 +9,9 @@ docs/superpowers/
 # Amiberry captures and hardware-test screenshots: local verification evidence,
 # not part of the build.
 Screenshots/
+
+# Installer 43.3: the binary and its licence ship with the archive (Escom AG clause
+# B.5), but the guide and sample scripts must never be redistributed (clause B.3).
+Installer43_3/*
+!Installer43_3/Installer
+!Installer43_3/Installer.license
