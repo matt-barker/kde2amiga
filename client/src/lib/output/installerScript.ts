@@ -75,8 +75,8 @@ export function buildInstallerScript(options: InstallerScriptOptions): string {
     '',
   ];
 
-  lines.push(...choiceBlock(hasDefaults, hasTargets, drawers));
-  if (hasDefaults) lines.push(...defaultsBlock(hasTargets));
+  lines.push(...choiceBlock(hasDefaults, hasTargets));
+  if (hasDefaults) lines.push(...defaultsBlock());
   if (hasTargets) lines.push(...targetsBlock(drawers));
 
   lines.push(
@@ -88,13 +88,9 @@ export function buildInstallerScript(options: InstallerScriptOptions): string {
   return lines.join('\n');
 }
 
-function choiceBlock(
-  hasDefaults: boolean,
-  hasTargets: boolean,
-  drawers: Map<string, WorkbenchTarget[]>,
-): string[] {
+function choiceBlock(hasDefaults: boolean, hasTargets: boolean): string[] {
   if (!hasTargets) return ['(set #what 1)', ''];
-  if (!hasDefaults) return ['(set #what 2)', '', ...warning(drawers)];
+  if (!hasDefaults) return ['(set #what 2)', ''];
 
   return [
     '(set #what (askoptions',
@@ -106,7 +102,11 @@ function choiceBlock(
     '           "Workbench icons")',
     '  (default 3)))',
     '',
-    ...warning(drawers),
+    // Only askoptions can come back with nothing ticked. Without this the script falls
+    // straight past both guards to the closing (exit ...) and reports installing icons
+    // it never touched.
+    '(if (= #what 0) (abort "Nothing selected, so nothing was installed."))',
+    '',
   ];
 }
 
@@ -114,25 +114,29 @@ function choiceBlock(
  * Named separately in the script because we cannot carry a correct value for it: the
  * SCSI device differs from machine to machine, so the icon ships with the stock name and
  * the user is told which one to check.
+ *
+ * Indented for, and emitted inside, the Workbench guard. Told to a user who unticked
+ * "Workbench icons" it would claim stock settings were installed over changes that were
+ * in fact left alone, which is worse than saying nothing.
  */
 function warning(drawers: Map<string, WorkbenchTarget[]>): string[] {
   const flagged = [...drawers.values()].flat().filter((target) => target.machineSpecific);
   if (flagged.length === 0) return [];
 
   return [
-    '(message "One of these icons carries settings that differ between machines:\\n\\n"',
-    `         "  ${flagged.map((t) => t.name).join(', ')}\\n\\n"`,
-    '         "The stock settings are installed. If you had changed them, restore"',
-    '         " them from the backup after installing.")',
+    '    (message "One of these icons carries settings that differ between machines:\\n\\n"',
+    `             "  ${flagged.map((t) => t.name).join(', ')}\\n\\n"`,
+    '             "The stock settings are installed. If you had changed them, restore"',
+    '             " them from the backup after installing.")',
     '',
   ];
 }
 
-function defaultsBlock(hasTargets: boolean): string[] {
-  const guard = hasTargets ? '(if (IN #what 0)' : '(if (= #what 1)';
-
+function defaultsBlock(): string[] {
   return [
-    guard,
+    // Bit 0 of the askoptions mask, and equally true of the 1 set outright when the
+    // archive has no Workbench targets to offer.
+    '(if (IN #what 0)',
     '  (',
     '    (makedir "ENVARC:Sys")',
     '    (makedir "ENV:Sys")',
@@ -148,6 +152,7 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
   const lines = [
     '(if (IN #what 1)',
     '  (',
+    ...warning(drawers),
     '    (set #backup (askdir',
     '      (prompt "Where should the icons being replaced be kept?")',
     '      (help "Every icon this replaces is copied here first, so you can put the"',
@@ -166,8 +171,18 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
 
     lines.push(
       `    ; ${destination} (${targets.length} icon${targets.length === 1 ? '' : 's'})`,
-      `    (set #here (tackon #backup "${branch}"))`,
-      '    (makedir #here)',
+      '    (set #here #backup)',
+    );
+
+    // One `makedir` per level rather than one for the whole branch. AmigaDOS `MakeDir`
+    // does not create intermediate drawers and Installer's `makedir` is not documented
+    // to either, and this is the drawer holding the only copy of the icon about to be
+    // overwritten — a failure here aborts the install with the user's original gone.
+    for (const level of branch.split('/')) {
+      lines.push(`    (set #here (tackon #here "${level}"))`, '    (makedir #here)');
+    }
+
+    lines.push(
       `    (foreach "${archiveDrawer}" "#?.info"`,
       `      (if (exists (tackon "${destination}" @each-name))`,
       `        (copyfiles (source (tackon "${destination}" @each-name)) (dest #here))))`,

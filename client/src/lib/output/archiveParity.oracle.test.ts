@@ -166,6 +166,10 @@ describe('zip and LHA parity, verified by Lhasa', () => {
   });
 
   it('carries the installer script and its icon through the LHA with their spaces intact', async () => {
+    // Both sides of the comparison come from the constant, so without this the test
+    // would stay green after a rename that left no spaces to survive anything.
+    expect(INSTALLER_SCRIPT_NAME).toContain(' ');
+
     const lha = await unpackLha(ICONS);
     expect([...lha.keys()]).toEqual(
       expect.arrayContaining([
