@@ -149,7 +149,7 @@ describe('SelectedIconList', () => {
    * two dozen file types they will never tag.
    */
   it('separates the type fallbacks from the DefIcons file types', () => {
-    const { container } = render(
+    render(
       <SelectedIconList
         variants={[folder]}
         assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
@@ -157,9 +157,10 @@ describe('SelectedIconList', () => {
       />,
     );
 
-    const groups = [...container.querySelectorAll('optgroup')].map((g) => g.label);
-    // Two slot groups plus the five Workbench-icon drawer groups now share the row.
-    expect(groups.length).toBeGreaterThanOrEqual(2);
+    // Scoped to the role select itself: the row also carries the Workbench-icon
+    // select's five drawer groups now, and an unscoped query would count those too.
+    const groups = within(slotSelect('folder')).getAllByRole('group').map((g) => g.getAttribute('label'));
+    expect(groups).toHaveLength(2);
     expect(groups.join(' ')).toMatch(/file type/i);
   });
 
