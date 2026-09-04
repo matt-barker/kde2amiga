@@ -290,7 +290,12 @@ export default function App() {
       );
       // Fetched here rather than at startup so a user who never converts never pays for
       // it, and so a failure surfaces as a conversion error rather than a silent gap.
-      const installer = await loadInstallerFiles();
+      // Skipped outright when nothing is assigned, because `buildOutputEntries` ships no
+      // installer for that archive — fetching 110KB to throw it away is bad enough, but
+      // failing the whole conversion over a file the archive was never going to carry is
+      // the part that would look like a bug.
+      const needsInstaller = converted.some((icon) => icon.role || icon.target);
+      const installer = needsInstaller ? await loadInstallerFiles() : undefined;
       // Packing is cheap next to the conversion above, so both formats are built now and
       // the user picks afterwards rather than before.
       const [zipBlob, lhaBlob] = [

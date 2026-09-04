@@ -29,12 +29,22 @@ async function fetchAsset(name: string): Promise<Uint8Array> {
  *
  * Fetched rather than compiled into the bundle: it is 110KB of 68k executable that would
  * otherwise inflate every page load, base64'd, for a file only used at download time.
+ *
+ * Only a *successful* load is remembered. Memoising the promise before it settles caches
+ * a rejection just as happily as a result, so one transient failure would fail every
+ * later conversion in the tab until the user reloaded — and the failure it caches is one
+ * a retry is likely to fix.
  */
 export function loadInstallerFiles(): Promise<InstallerFiles> {
   cached ??= Promise.all([
     fetchAsset(INSTALLER_BINARY_NAME),
     fetchAsset(INSTALLER_LICENSE_NAME),
-  ]).then(([binary, license]) => ({ binary, license }));
+  ])
+    .then(([binary, license]) => ({ binary, license }))
+    .catch((err) => {
+      cached = null;
+      throw err;
+    });
 
   return cached;
 }

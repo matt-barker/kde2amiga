@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -37,5 +37,69 @@ describe('the bundled Installer', () => {
 
   it('is served from a path the Vite plugin and the loader agree on', () => {
     expect(INSTALLER_ASSET_BASE).toBe('/installer');
+  });
+});
+
+/**
+ * The loader memoises so a user converting twice does not refetch 110KB. Memoising the
+ * promise rather than the result is what made a single transient failure permanent: the
+ * rejection was cached too, and every later conversion in that tab failed until reload,
+ * over a fetch a retry would very likely have fixed.
+ *
+ * Each test re-imports the module so it starts with an empty cache, and drives the real
+ * loader with a stubbed `fetch` — mocking the module instead would test the mock.
+ */
+describe('loadInstallerFiles', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  const bytes = (n: number) => new Uint8Array([n]);
+
+  function stubFetch(responses: (() => Response)[]) {
+    const fetches: string[] = [];
+    let call = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      fetches.push(url);
+      return responses[Math.min(call++, responses.length - 1)]();
+    }));
+    return fetches;
+  }
+
+  const ok = () => new Response(bytes(0x42), { status: 200 });
+  const missing = () => new Response(null, { status: 404 });
+
+  async function loader() {
+    vi.resetModules();
+    return (await import('./installerBinary')).loadInstallerFiles;
+  }
+
+  it('fetches once and serves every later caller from the cache', async () => {
+    const fetches = stubFetch([ok]);
+    const load = await loader();
+
+    await load();
+    await load();
+
+    expect(fetches).toEqual(['/installer/Installer', '/installer/Installer.license']);
+  });
+
+  it('reports which file it could not load', async () => {
+    stubFetch([missing]);
+    const load = await loader();
+
+    await expect(load()).rejects.toThrow(/Installer \(HTTP 404\)/);
+  });
+
+  it('does not cache a failure, so the next conversion can still succeed', async () => {
+    let succeed = false;
+    stubFetch([() => (succeed ? ok() : missing())]);
+    const load = await loader();
+
+    await expect(load()).rejects.toThrow();
+    succeed = true;
+
+    await expect(load()).resolves.toMatchObject({ binary: bytes(0x42) });
   });
 });

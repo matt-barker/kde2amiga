@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import JSZip from 'jszip';
 import App from './App';
 import { runConversionJob, DEFAULT_JOB_CONFIG } from './lib/pipeline/convertJob';
 import { buildPreviews } from './lib/pipeline/preview';
 import { ARCHIVE_BASE_NAME } from './lib/output/outputEntries';
+import { loadInstallerFiles } from './lib/output/installerBinary';
 
 vi.mock('./lib/pipeline/convertJob', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/pipeline/convertJob')>();
@@ -470,5 +471,60 @@ describe('default configuration', () => {
     // is the size at which the default Glow Surround output matches GlowIcons ring for
     // ring. Below it the ramp starts truncating.
     expect(DEFAULT_JOB_CONFIG.outputSizePx).toBe(48);
+  });
+});
+
+/**
+ * The bundled Installer is fetched at conversion time, and both halves of that were
+ * wrong: a failed fetch was memoised, so one transient 404 broke every later conversion
+ * in the tab; and it was fetched even for archives that ship no installer at all.
+ *
+ * These drive the *real* loader with `fetch` stubbed rather than the module mock the
+ * rest of this file uses, because a mocked loader cannot fail the way the real one does.
+ */
+describe('the bundled Installer, fetched at conversion time', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(loadInstallerFiles).mockClear();
+  });
+
+  async function selectFolder() {
+    render(<App />);
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
+    fireEvent.click(galleryCheckboxFor('folder'));
+  }
+
+  it('fails the conversion with a message when the Installer cannot be fetched', async () => {
+    const real = await vi.importActual<typeof import('./lib/output/installerBinary')>(
+      './lib/output/installerBinary',
+    );
+    vi.mocked(loadInstallerFiles).mockImplementation(real.loadInstallerFiles);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
+
+    await selectFolder();
+    fireEvent.change(await screen.findByLabelText(/default slot for folder$/i), {
+      target: { value: 'drawer' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    const alert = await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(alert).toHaveTextContent(/Conversion failed/i);
+    expect(alert).toHaveTextContent(/404/);
+    expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  /**
+   * With nothing assigned, `buildOutputEntries` ships no installer — so fetching one is
+   * 110KB thrown away, and a failed fetch would fail a conversion over a file the
+   * archive was never going to carry.
+   */
+  it('is not fetched at all when no icon claims a slot or a Workbench target', async () => {
+    await selectFolder();
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    await screen.findByRole('link', { name: /download zip/i }, { timeout: 5000 });
+    expect(loadInstallerFiles).not.toHaveBeenCalled();
   });
 });
