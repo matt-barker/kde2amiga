@@ -18,6 +18,7 @@ export interface JobIconInput {
   icon: IconVariant;
   kind: IconKind;
   role?: ConvertedIcon['role'];
+  target?: ConvertedIcon['target'];
   badge?: BadgeOptions;
 }
 
@@ -200,6 +201,7 @@ export async function runConversionJob(
       normal: { width, height, transparent: true, palette, pixels: normal },
       selected: { width, height, transparent: true, palette, pixels: selected },
       role: input.role,
+      target: input.target,
     };
   });
 

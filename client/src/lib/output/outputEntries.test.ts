@@ -229,3 +229,80 @@ describe('the Install Default Icons installer', () => {
     }
   });
 });
+
+/**
+ * A converted icon can also name a Workbench icon it replaces. That copy is mirrored
+ * under Wb/ so the archive layout matches where the installer script has to put it.
+ */
+describe('Workbench target replacement', () => {
+  it('mirrors the Workbench tree under Wb/, so the drawer names match the machine', () => {
+    const paths = pathsOf([icon({ name: 'font', target: 'SYS:Prefs/Font' })]);
+
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        `${ARCHIVE_BASE_NAME}/font.info`,
+        `${ARCHIVE_BASE_NAME}/Wb/SYS/Prefs/Font.info`,
+      ]),
+    );
+  });
+
+  /**
+   * The target copy is named for the *target*, not for the KDE icon: Workbench pairs
+   * `Font` with `Font.info`, so a copy called `font.info` would sit in SYS:Prefs doing
+   * nothing at all.
+   */
+  it('names the target copy after the file it replaces', () => {
+    const paths = pathsOf([icon({ name: 'preferences-desktop-font', target: 'SYS:Prefs/Font' })]);
+    expect(paths).toContain(`${ARCHIVE_BASE_NAME}/Wb/SYS/Prefs/Font.info`);
+  });
+
+  /**
+   * Losing the default tool here does not degrade the Shell icon, it disables it —
+   * there is no `Shell` executable for Workbench to fall back on.
+   */
+  it('carries the target default tool and ToolTypes into the replacement', () => {
+    const entries = buildOutputEntries([icon({ name: 'terminal', target: 'SYS:System/Shell' })]);
+    const decoded = decodeInfoFileForTest(
+      entries.find((e) => e.path.endsWith('/Wb/SYS/System/Shell.info'))!.bytes,
+    );
+
+    expect(decoded.type).toBe(4); // project, as the real Shell.info is
+    expect(decoded.defaultTool).toBe('SYS:System/CLI');
+    expect(decoded.toolTypes.slice(0, 3)).toEqual([
+      'WINDOW=CON:0///130/AmigaShell/CLOSE/ICONIFY',
+      'STACK=4096',
+      'FROM=S:Shell-Startup',
+    ]);
+  });
+
+  it('keeps DONOTWAIT on a WBStartup replacement', () => {
+    const entries = buildOutputEntries([icon({ target: 'SYS:WBStartup/DefIcons' })]);
+    const decoded = decodeInfoFileForTest(
+      entries.find((e) => e.path.endsWith('/Wb/SYS/WBStartup/DefIcons.info'))!.bytes,
+    );
+
+    expect(decoded.toolTypes).toContain('DONOTWAIT');
+  });
+
+  /**
+   * The three destinations disagree about the type byte on purpose, and this is the case
+   * that proves it: one icon, standalone as a drawer, as def_picture a project, and in
+   * SYS:Prefs a tool Workbench must be able to run.
+   */
+  it('lets one icon fill a slot and a target with different types', () => {
+    const entries = buildOutputEntries([
+      icon({ kind: 'drawer', role: 'picture', target: 'SYS:Prefs/Font' }),
+    ]);
+    const typeAt = (suffix: string) =>
+      decodeInfoFileForTest(entries.find((e) => e.path.endsWith(suffix))!.bytes).type;
+
+    expect(typeAt('/folder.info')).toBe(2); // drawer
+    expect(typeAt('/Sys/def_picture.info')).toBe(4); // project
+    expect(typeAt('/Wb/SYS/Prefs/Font.info')).toBe(3); // tool
+  });
+
+  it('writes no Wb drawer when nothing is assigned to a target', () => {
+    const paths = pathsOf([icon({ role: 'drawer' })]);
+    expect(paths.some((path) => path.includes('/Wb/'))).toBe(false);
+  });
+});

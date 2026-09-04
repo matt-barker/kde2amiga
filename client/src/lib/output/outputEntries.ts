@@ -7,6 +7,7 @@ import {
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
 import type { NewIconState } from '../newicons/newIconsEncoder';
 import { slotForRole, type DefaultIconRole } from './defaultIconSlots';
+import { archiveDrawerFor, targetForPath, type WorkbenchTargetPath } from './workbenchTargets';
 
 /**
  * One converted icon, as image states rather than as a finished `.info`.
@@ -27,6 +28,14 @@ export interface ConvertedIcon {
   normal: NewIconState;
   selected: NewIconState;
   role?: DefaultIconRole;
+  /**
+   * The Workbench icon this also replaces, as a `SYS:Prefs/Font` path.
+   *
+   * Independent of both `kind` and `role`: the copy is named for the target, typed for
+   * the target, and carries the target's own default tool and ToolTypes, none of which
+   * the other two destinations know or care about.
+   */
+  target?: WorkbenchTargetPath;
 }
 
 /**
@@ -135,6 +144,16 @@ export function buildOutputEntries(
       entries.push({
         path: at(`${SYS_DRAWER}/def_${icon.role}.info`),
         bytes: infoFor(icon, slotForRole(icon.role).kind),
+      });
+    }
+    if (icon.target) {
+      const target = targetForPath(icon.target);
+      entries.push({
+        path: at(`${archiveDrawerFor(target)}/${target.name}.info`),
+        bytes: infoFor(icon, target.kind, {
+          defaultTool: target.defaultTool,
+          toolTypes: target.toolTypes,
+        }),
       });
     }
   }
