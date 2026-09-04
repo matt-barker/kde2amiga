@@ -186,4 +186,62 @@ describe('buildInfoFile', () => {
     expect(decoded.defaultTool).toBe('SYS:Tools/IconX');
     expect(decoded.type).toBe(2);
   });
+
+  /**
+   * Carried ToolTypes go ahead of the NewIcons payload for two reasons: the preamble
+   * says "don't edit the following lines", which is only true if the editable ones come
+   * first; and a tool scanning for DONOTWAIT should not have to read past a few hundred
+   * lines of encoded pixels to find it.
+   */
+  it('writes carried ToolTypes ahead of the NewIcons preamble', () => {
+    const bytes = buildInfoFile({
+      width: 4,
+      height: 4,
+      kind: 'tool',
+      normal: makeState(4, 4),
+      selected: makeState(4, 4),
+      toolTypes: ['DONOTWAIT', 'STARTPRI=30'],
+    });
+    const decoded = decodeInfoFileForTest(bytes);
+
+    expect(decoded.toolTypes.slice(0, 3)).toEqual(['DONOTWAIT', 'STARTPRI=30', ' ']);
+    expect(decoded.toolTypes[3]).toBe("*** DON'T EDIT THE FOLLOWING LINES!! ***");
+  });
+
+  it('still decodes both image states with ToolTypes carried in front of them', () => {
+    const normal = makeState(4, 4);
+    const selected = makeState(4, 4);
+    const decoded = decodeInfoFileForTest(
+      buildInfoFile({
+        width: 4,
+        height: 4,
+        kind: 'project',
+        normal,
+        selected,
+        defaultTool: 'C:IconX',
+        toolTypes: ['WINDOW=CON:0///130/AmigaShell/CLOSE/ICONIFY'],
+      }),
+    );
+
+    expect(decoded.defaultTool).toBe('C:IconX');
+    expect(decoded.normal.pixels).toEqual(normal.pixels);
+    expect(decoded.selected.pixels).toEqual(selected.pixels);
+  });
+
+  /**
+   * Pins the change as purely additive. Every icon in the archive that carries no
+   * ToolTypes must come out exactly as it did before, or this task has silently
+   * rewritten the entire output of the converter.
+   */
+  it('is byte-identical to an icon built without the parameter when none are carried', () => {
+    const shared = {
+      width: 4,
+      height: 4,
+      kind: 'tool',
+      normal: makeState(4, 4),
+      selected: makeState(4, 4),
+    } as const;
+
+    expect(buildInfoFile({ ...shared, toolTypes: [] })).toEqual(buildInfoFile(shared));
+  });
 });

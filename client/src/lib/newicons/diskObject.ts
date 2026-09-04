@@ -45,12 +45,23 @@ export function buildInfoFile(params: {
    * they did not ask for would hijack the double-click.
    */
   defaultTool?: string;
+  /**
+   * ToolTypes to carry into the icon, verbatim and in order, ahead of the NewIcons
+   * payload.
+   *
+   * Load-bearing rather than decorative. A replacement for a WBStartup icon that drops
+   * `DONOTWAIT` leaves Workbench blocking on that startup item, and a replacement for
+   * `SYS:System/Shell` that drops `WINDOW=` opens a shell with no console. The values
+   * come from `workbenchTargets`, which read them off a real 3.2.3 install.
+   */
+  toolTypes?: readonly string[];
 }): Uint8Array {
-  const { width, height, kind, normal, selected, defaultTool } = params;
+  const { width, height, kind, normal, selected, defaultTool, toolTypes: carried } = params;
 
   const isDrawerLike = kind === 'drawer' || kind === 'trashcan';
 
   const toolTypes = [
+    ...(carried ?? []),
     ...NEWICONS_PREAMBLE,
     ...encodeNewIconState(normal, 'IM1='),
     ...encodeNewIconState(selected, 'IM2='),
