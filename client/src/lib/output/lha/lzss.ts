@@ -3,12 +3,18 @@ export type LzToken =
   | { kind: 'match'; length: number; distance: number };
 
 /**
- * `-lh5-`'s dictionary: 16 KiB, matching HISTORY_BITS 14 in Lhasa's lh5_decoder.c.
+ * `-lh5-`'s dictionary: 8 KiB, HISTORY_BITS 13 in Lhasa's lh5_decoder.c. `-lh6-` (32 KiB)
+ * and `-lh7-` (64 KiB) widen it, but Amiga LhA does not read those.
  *
- * Offsets are coded as `distance - 1` in at most 14 bits, so distances run 1..16384.
- * `-lh6-`/`-lh7-` widen this, but Amiga LhA does not read those.
+ * The bound comes from the format, never from how wide an offset the encoder can write.
+ * This was 16384 once, reasoned backwards from the 14-bit offset code the encoder happened
+ * to allow, and the archives it produced decoded perfectly under Lhasa — which tolerates a
+ * distance reaching past the history it keeps. Amiga LhA 2.15 and 7-Zip both refused them:
+ * 7-Zip wrote 8598 bytes of a 109956-byte file and stopped at the first over-long
+ * back-reference. Nothing smaller than 8 KiB can express the fault, so every icon in the
+ * archive was fine and only the bundled Installer failed.
  */
-export const LH5_WINDOW = 16384;
+export const LH5_WINDOW = 8192;
 /** Below three bytes a match costs more to encode than the literals it replaces. */
 export const LH5_MIN_MATCH = 3;
 /** Lengths are coded as 256 + (length - 3), and the literal/length alphabet stops at 510. */

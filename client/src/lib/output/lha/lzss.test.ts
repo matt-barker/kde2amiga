@@ -99,3 +99,32 @@ describe('lzssCompress', () => {
     expect(replay(lzssCompress(bytes))).toEqual(bytes);
   });
 });
+
+/**
+ * `-lh5-`'s dictionary is 8 KiB. A distance beyond it encodes to a 14-bit offset that a
+ * strict decoder cannot resolve, because it only keeps 8192 bytes of history.
+ *
+ * This is not theoretical. An encoder that allowed 16 KiB produced an archive Lhasa
+ * decoded perfectly and both Amiga LhA 2.15 and 7-Zip refused: 7-Zip wrote 8598 bytes of
+ * a 109956-byte file and stopped at the first over-long back-reference. Every file in the
+ * archive under 8 KiB was fine, which is exactly why the oracle tests missed it — they
+ * decode through Lhasa, which tolerates the over-long distance.
+ */
+describe('the -lh5- window bound', () => {
+  it('never emits a distance beyond the 8 KiB dictionary', () => {
+    // A run far enough back that an unbounded matcher would reach for it: 12000 bytes of
+    // non-repeating filler, then a verbatim repeat of the opening bytes.
+    const head = Uint8Array.from({ length: 64 }, (_, i) => (i * 37 + 11) & 0xff);
+    const input = new Uint8Array(12000 + head.length);
+    for (let i = 0; i < 12000; i++) input[i] = (i * 2654435761) >>> 24;
+    input.set(head, 0);
+    input.set(head, 12000);
+
+    const tokens = lzssCompress(input);
+    const distances = tokens.flatMap((t) => (t.kind === 'match' ? [t.distance] : []));
+
+    expect(distances.length).toBeGreaterThan(0); // the assertion below is not vacuous
+    expect(Math.max(...distances)).toBeLessThanOrEqual(LH5_WINDOW);
+    expect(LH5_WINDOW).toBe(8192);
+  });
+});
