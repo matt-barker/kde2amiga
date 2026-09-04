@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+// fireEvent rather than user-event: the latter is not a dependency here, and every
+// other component test in this codebase drives selects the same way.
+import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
 import { SelectedIconList } from './SelectedIconList';
 import { WORKBENCH_GREY } from './IconTile';
 import type { IconAssignment } from '../lib/theme/assignment';
@@ -71,30 +73,12 @@ describe('SelectedIconList', () => {
   });
 
   /**
-   * DefIcons matches on the file's datatype, not on the DiskObject type byte, so a
-   * def_picture.info is an ordinary project icon. Snapping the kind to the slot the way
-   * the type fallbacks require would make every DefIcons choice silently retype the icon.
+   * Every destination now stamps its own type byte, so choosing a slot never touches
+   * `kind` — the cross-forcing this used to require (a type-fallback slot had to agree
+   * with the type byte, because icon.library finds it *by* that byte) is gone: each
+   * destination writes a copy typed and named for itself.
    */
-  it('leaves the icon kind alone when a DefIcons slot is picked', () => {
-    const onAssignmentChange = vi.fn();
-    render(
-      <SelectedIconList
-        variants={[readme]}
-        assignments={new Map<string, IconAssignment>([[readme.zipPath, { kind: 'project' }]])}
-        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
-      />,
-    );
-
-    fireEvent.change(slotSelect('text-x-generic'), { target: { value: 'picture' } });
-
-    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'project', role: 'picture' });
-  });
-
-  /**
-   * The five type fallbacks are the exception: icon.library finds them *by* the type
-   * byte, so a def_drawer.info carrying type 4 is never consulted as a drawer icon.
-   */
-  it('snaps the icon kind to a type-fallback slot', () => {
+  it('leaves the icon kind alone when a slot is picked', () => {
     const onAssignmentChange = vi.fn();
     render(
       <SelectedIconList
@@ -106,7 +90,7 @@ describe('SelectedIconList', () => {
 
     fireEvent.change(slotSelect('text-x-generic'), { target: { value: 'trashcan' } });
 
-    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'trashcan', role: 'trashcan' });
+    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'project', role: 'trashcan' });
   });
 
   it('clears the role, but not the kind, when the slot is set back to none', () => {
@@ -125,11 +109,11 @@ describe('SelectedIconList', () => {
   });
 
   /**
-   * Retyping an icon that claims a type-fallback slot has to move the slot with it, or
-   * the row goes on claiming def_drawer while writing a disk icon into it. A DefIcons
-   * slot has no such tie and stays where the user put it.
+   * The retargeting this replaced moved a type-fallback slot along with the type byte,
+   * because the two used to have to agree. Now each destination is typed for itself, so
+   * retyping an icon leaves whatever slot it claims exactly where it was.
    */
-  it('retargets a type-fallback slot when the type changes', () => {
+  it('leaves the slot alone when the type changes', () => {
     const onAssignmentChange = vi.fn();
     render(
       <SelectedIconList
@@ -141,22 +125,7 @@ describe('SelectedIconList', () => {
 
     fireEvent.change(screen.getByLabelText(/type for folder/i), { target: { value: 'disk' } });
 
-    expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'disk', role: 'disk' });
-  });
-
-  it('leaves a DefIcons slot where it is when the type changes', () => {
-    const onAssignmentChange = vi.fn();
-    render(
-      <SelectedIconList
-        variants={[readme]}
-        assignments={new Map<string, IconAssignment>([[readme.zipPath, { kind: 'project', role: 'picture' }]])}
-        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText(/type for text-x-generic/i), { target: { value: 'tool' } });
-
-    expect(onAssignmentChange).toHaveBeenCalledWith(readme.zipPath, { kind: 'tool', role: 'picture' });
+    expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, { kind: 'disk', role: 'drawer' });
   });
 
   it('offers every slot in the catalogue, named for the file it writes', () => {
@@ -189,7 +158,8 @@ describe('SelectedIconList', () => {
     );
 
     const groups = [...container.querySelectorAll('optgroup')].map((g) => g.label);
-    expect(groups).toHaveLength(2);
+    // Two slot groups plus the five Workbench-icon drawer groups now share the row.
+    expect(groups.length).toBeGreaterThanOrEqual(2);
     expect(groups.join(' ')).toMatch(/file type/i);
   });
 
@@ -264,5 +234,62 @@ describe('removing a row', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /remove text-x-generic/i }));
     expect(onRemove).toHaveBeenCalledWith(readme.zipPath);
+  });
+});
+
+describe('the Workbench icon column', () => {
+  it('offers every target, grouped by the drawer it lives in', () => {
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={() => {}} onRemove={() => {}}
+      />,
+    );
+    const select = screen.getByLabelText(`Workbench icon for ${folder.name}`);
+
+    expect(select).toHaveValue('');
+    expect(within(select).getByRole('group', { name: 'SYS:Prefs' })).toBeInTheDocument();
+  });
+
+  it('reports the chosen target as a path', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(`Workbench icon for ${folder.name}`), {
+      target: { value: 'SYS:Prefs/Font' },
+    });
+
+    expect(onAssignmentChange).toHaveBeenCalledWith(folder.zipPath, {
+      kind: 'drawer',
+      target: 'SYS:Prefs/Font',
+    });
+  });
+
+  /**
+   * The Type dropdown governs the standalone icon only — each destination stamps its own
+   * type byte now. Choosing a target must therefore leave `kind` exactly as it was; the
+   * cross-forcing this replaced is what made that impossible when an icon filled two
+   * destinations wanting different types.
+   */
+  it('leaves the icon type alone when a target is chosen', () => {
+    const onAssignmentChange = vi.fn();
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'project' }]])}
+        onAssignmentChange={onAssignmentChange} onRemove={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(`Workbench icon for ${folder.name}`), {
+      target: { value: 'SYS:System/Shell' },
+    });
+
+    expect(onAssignmentChange.mock.calls[0][1].kind).toBe('project');
   });
 });

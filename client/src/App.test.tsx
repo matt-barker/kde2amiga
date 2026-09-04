@@ -327,6 +327,38 @@ describe('App end-to-end', () => {
     expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
   });
 
+  /**
+   * `findAssignmentConflicts` replaced `findRoleConflicts`, which only ever looked at
+   * `role`. Two icons claiming the same Workbench *target* is the same class of error —
+   * `buildOutputEntries` would write one of the two archive entries and silently drop
+   * the other — so it has to be caught the same way.
+   */
+  it('refuses to convert when two icons claim the same Workbench icon', async () => {
+    vi.mocked(runConversionJob).mockClear();
+    render(<App />);
+
+    const file = await makeTwoDrawerThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder', { selector: '.icon-tile__name' })).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    fireEvent.click(galleryCheckboxFor('folder-open'));
+    for (const name of ['folder', 'folder-open']) {
+      fireEvent.change(await screen.findByLabelText(new RegExp(`Workbench icon for ${name}$`)), {
+        target: { value: 'SYS:Prefs/Presets' },
+      });
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('SYS:Prefs/Presets');
+    expect(alert).toHaveTextContent(/folder/);
+    expect(alert).toHaveTextContent(/folder-open/);
+    expect(runConversionJob).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
+  });
+
   it('drops the existing previews the instant the selection grows', async () => {
     render(<App />);
 

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconKind } from '../lib/newicons/diskObject';
+import { DEFAULT_ICON_SLOTS, type DefaultIconRole } from '../lib/output/defaultIconSlots';
 import {
-  DEFAULT_ICON_SLOTS,
-  slotForRole,
-  type DefaultIconRole,
-} from '../lib/output/defaultIconSlots';
+  WORKBENCH_TARGETS,
+  targetPath,
+  type WorkbenchTargetPath,
+} from '../lib/output/workbenchTargets';
 import { defaultAssignment, type IconAssignment } from '../lib/theme/assignment';
 import type { IconPreview } from '../lib/pipeline/preview';
 import { WORKBENCH_GREY } from './IconTile';
@@ -23,14 +24,18 @@ const SLOT_GROUPS = [
 ] as const;
 
 /**
- * Whether icon.library finds this slot by the DiskObject type byte.
+ * Targets grouped for the dropdown, in catalogue order.
  *
- * It decides which way the two dropdowns pull on each other. A type fallback is looked
- * up *by* the type, so the two must agree and each one moves the other; a DefIcons slot
- * is matched on the file's datatype and has no such tie, so choosing `def_picture` must
- * not silently retype the icon.
+ * Built once rather than per row: forty-nine entries across five groups, rebuilt for
+ * every selected icon on every render, is work for nothing.
  */
-const isTypeFallback = (role: DefaultIconRole) => slotForRole(role).group === 'type';
+const TARGET_GROUPS = WORKBENCH_TARGETS.reduce((groups, target) => {
+  const label = `${target.root}${target.drawer}`;
+  const existing = groups.get(label);
+  if (existing) existing.push(target);
+  else groups.set(label, [target]);
+  return groups;
+}, new Map<string, typeof WORKBENCH_TARGETS[number][]>());
 
 function PreviewCanvas(props: { image: ImageData; label: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
@@ -76,6 +81,7 @@ export function SelectedIconList(props: {
             <th scope="col">Icon</th>
             <th scope="col">Type</th>
             <th scope="col">System default</th>
+            <th scope="col">Workbench icon</th>
             {/*
               The column exists for layout, but its heading would only ever read
               "Remove" above a row of identical crosses — the buttons name themselves.
@@ -88,6 +94,7 @@ export function SelectedIconList(props: {
             const assignment = assignments.get(variant.zipPath) ?? defaultAssignment(variant);
             const kindId = `kind-${variant.zipPath}`;
             const roleId = `role-${variant.zipPath}`;
+            const targetId = `target-${variant.zipPath}`;
             const preview = previews?.get(variant.zipPath);
 
             return (
@@ -133,20 +140,7 @@ export function SelectedIconList(props: {
                     value={assignment.kind}
                     onChange={(event) => {
                       const kind = event.target.value as IconKind;
-                      onAssignmentChange(variant.zipPath, {
-                        ...assignment,
-                        kind,
-                        /*
-                         * Every IconKind is also the name of a type-fallback slot, which
-                         * is what makes this cast safe — and what makes the retarget
-                         * necessary: a row left claiming def_drawer after being retyped
-                         * as a disk writes a disk icon into the drawer's slot.
-                         */
-                        role:
-                          assignment.role && isTypeFallback(assignment.role)
-                            ? (kind as DefaultIconRole)
-                            : assignment.role,
-                      });
+                      onAssignmentChange(variant.zipPath, { ...assignment, kind });
                     }}
                   >
                     {KINDS.map((kind) => (
@@ -172,11 +166,7 @@ export function SelectedIconList(props: {
                     value={assignment.role ?? ''}
                     onChange={(event) => {
                       const role = event.target.value === '' ? undefined : (event.target.value as DefaultIconRole);
-                      onAssignmentChange(variant.zipPath, {
-                        ...assignment,
-                        role,
-                        kind: role && isTypeFallback(role) ? slotForRole(role).kind : assignment.kind,
-                      });
+                      onAssignmentChange(variant.zipPath, { ...assignment, role });
                     }}
                   >
                     <option value="">none</option>
@@ -185,6 +175,39 @@ export function SelectedIconList(props: {
                         {DEFAULT_ICON_SLOTS.filter((slot) => slot.group === group).map((slot) => (
                           <option key={slot.role} value={slot.role}>
                             {`def_${slot.role} — ${slot.description}`}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </td>
+
+                <td className="selected__target">
+                  {/*
+                    Names the *target*, as the slot dropdown beside it does: one icon
+                    replaces each Workbench icon, so naming the KDE icon here would say
+                    nothing about what picking a value does.
+                  */}
+                  <label className="visually-hidden" htmlFor={targetId}>
+                    {`Workbench icon for ${variant.name}`}
+                  </label>
+                  <select
+                    id={targetId}
+                    value={assignment.target ?? ''}
+                    onChange={(event) => {
+                      const target =
+                        event.target.value === ''
+                          ? undefined
+                          : (event.target.value as WorkbenchTargetPath);
+                      onAssignmentChange(variant.zipPath, { ...assignment, target });
+                    }}
+                  >
+                    <option value="">none</option>
+                    {[...TARGET_GROUPS].map(([label, targets]) => (
+                      <optgroup key={label} label={label}>
+                        {targets.map((target) => (
+                          <option key={targetPath(target)} value={targetPath(target)}>
+                            {`${target.name} — ${target.description}`}
                           </option>
                         ))}
                       </optgroup>
@@ -215,7 +238,8 @@ export function SelectedIconList(props: {
         A row with a slot picked is also written to <code>Sys/def_*.info</code>, the icon
         AmigaOS falls back to when a file or drawer has none of its own. One icon per
         slot. The archive then carries an <code>Install Default Icons</code> script that
-        copies them into place.
+        copies them into place. A row with a Workbench icon picked also replaces that icon
+        on your Amiga — the installer copies the original into a backup drawer first.
       </p>
     </section>
   );

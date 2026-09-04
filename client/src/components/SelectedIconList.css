@@ -102,7 +102,8 @@
   border-radius: 5px;
 }
 
-.selected__role {
+.selected__role,
+.selected__target {
   white-space: nowrap;
 }
 
@@ -110,7 +111,8 @@
  * The slot names are long enough ("def_officedocs - Office document") to stretch the
  * table past the viewport if the select is left to size itself to its widest option.
  */
-.selected__role select {
+.selected__role select,
+.selected__target select {
   max-width: 220px;
 }
 

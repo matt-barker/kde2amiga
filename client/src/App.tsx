@@ -63,25 +63,30 @@ function enforceOneVariantPerName(
 }
 
 /**
- * Finds default-icon roles claimed by more than one icon.
+ * Finds destinations claimed by more than one icon.
  *
- * `zipBuilder` writes `Sys/def_${role}.info`, so two icons tagged as the same system
- * default silently collapse into one file. Unlike the name collision above there is no
- * sensible auto-resolution — two icons both claiming to be *the* default drawer is a
- * genuine user error — so conversion is blocked and the conflict named instead.
+ * `buildOutputEntries` writes one file per destination, so two icons claiming the same
+ * one silently collapse into whichever the loop wrote last. Unlike the name collision
+ * above there is no sensible auto-resolution — two icons both claiming to be *the*
+ * default drawer is a genuine user error — so conversion is blocked and the conflict
+ * named. Roles and targets are the same class of error and are reported together.
  */
-function findRoleConflicts(inputs: JobIconInput[]): Map<string, string[]> {
-  const namesByRole = new Map<string, string[]>();
+function findAssignmentConflicts(inputs: JobIconInput[]): Map<string, string[]> {
+  const namesByDestination = new Map<string, string[]>();
+
   for (const input of inputs) {
-    if (!input.role) continue;
-    const names = namesByRole.get(input.role) ?? [];
-    names.push(input.icon.name);
-    namesByRole.set(input.role, names);
+    for (const destination of [input.role && `def_${input.role}`, input.target]) {
+      if (!destination) continue;
+      const names = namesByDestination.get(destination) ?? [];
+      names.push(input.icon.name);
+      namesByDestination.set(destination, names);
+    }
   }
-  for (const [role, names] of namesByRole) {
-    if (names.length < 2) namesByRole.delete(role);
+
+  for (const [destination, names] of namesByDestination) {
+    if (names.length < 2) namesByDestination.delete(destination);
   }
-  return namesByRole;
+  return namesByDestination;
 }
 
 export default function App() {
@@ -256,17 +261,22 @@ export default function App() {
 
     const inputs: JobIconInput[] = selectedVariants.map((variant) => {
       const assignment = assignments.get(variant.zipPath) ?? defaultAssignment(variant);
-      return { icon: variant, kind: assignment.kind, role: assignment.role };
+      return {
+        icon: variant,
+        kind: assignment.kind,
+        role: assignment.role,
+        target: assignment.target,
+      };
     });
 
-    const conflicts = findRoleConflicts(inputs);
+    const conflicts = findAssignmentConflicts(inputs);
     if (conflicts.size > 0) {
-      const described = Array.from(conflicts, ([role, names]) =>
-        `def_${role} is claimed by ${names.join(', ')}`,
+      const described = Array.from(conflicts, ([destination, names]) =>
+        `${destination} is claimed by ${names.join(', ')}`,
       ).join('; ');
       setError(
-        `Only one icon can be the system default for each role. ${described}. ` +
-          'Untick "Use as system default" on all but one of them.',
+        `Only one icon can fill each destination. ${described}. ` +
+          'Clear the duplicate on all but one of them.',
       );
       return;
     }

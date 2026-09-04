@@ -1,5 +1,6 @@
 import type { IconKind } from '../newicons/diskObject';
 import type { DefaultIconRole } from '../output/defaultIconSlots';
+import type { WorkbenchTargetPath } from '../output/workbenchTargets';
 import type { IconVariant } from './themeParser';
 import { inferIconKind } from './iconKind';
 
@@ -14,6 +15,13 @@ export interface IconAssignment {
    * ordinary project icon. `defaultIconSlots` says which of the two a slot belongs to.
    */
   role?: DefaultIconRole;
+  /**
+   * The Workbench icon this also replaces, or undefined for most icons.
+   *
+   * Independent of both `kind` and `role`: the copy written for a target is typed and
+   * named by the target itself, so nothing here has to agree with anything else.
+   */
+  target?: WorkbenchTargetPath;
 }
 
 /**
