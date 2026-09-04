@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { buildOutputZip } from './zipBuilder';
 import { ARCHIVE_BASE_NAME } from './outputEntries';
+import { INSTALLER_SCRIPT_NAME } from './installerScript';
 import { buildOutputLha } from './lhaBuilder';
 import type { ConvertedIcon } from './outputEntries';
 import type { NewIconState } from '../newicons/newIconsEncoder';
@@ -168,8 +169,8 @@ describe('zip and LHA parity, verified by Lhasa', () => {
     const lha = await unpackLha(ICONS);
     expect([...lha.keys()]).toEqual(
       expect.arrayContaining([
-        `${ARCHIVE_BASE_NAME}/Install Default Icons`,
-        `${ARCHIVE_BASE_NAME}/Install Default Icons.info`,
+        `${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}`,
+        `${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}.info`,
       ]),
     );
   });

@@ -1,3 +1,5 @@
+import { WB_DRAWER, type WorkbenchTarget } from './workbenchTargets';
+
 /**
  * The drawer inside the archive that holds the `def_*.info` copies.
  *
@@ -10,46 +12,170 @@ export const SYS_DRAWER = 'Sys';
 /**
  * The script's filename. Workbench pairs a file with `<name>.info`, so the icon's path
  * is this plus the suffix — spaces and all, which AmigaDOS allows.
- */
-export const INSTALLER_SCRIPT_NAME = 'Install Default Icons';
-
-/**
- * `do_DefaultTool` for the script's icon. IconX ships in `C:` on AmigaOS 3.x and is the
- * standard way to make an AmigaDOS script double-clickable: it opens a console window,
- * `Execute`s the script in the drawer the icon sits in, and closes when it returns.
  *
- * Because IconX uses `Execute`, the script does not need its `s` protection bit set —
- * which matters, since neither the zip nor the LHA writer carries Amiga protection bits.
+ * Renamed from "Install Default Icons" when the script learned to install Workbench
+ * icons too, because a name that describes half of what a script does is worse than a
+ * vague one.
  */
-export const INSTALLER_DEFAULT_TOOL = 'IconX';
+export const INSTALLER_SCRIPT_NAME = 'Install kde2amiga Icons';
 
 /**
- * Kept to plain ASCII and LF endings on purpose. AmigaDOS reads ISO-8859-1, so a smart
- * quote pasted in here would reach the Amiga as mojibake in the middle of a command,
- * and a CR would be read as part of the argument rather than as whitespace.
+ * `do_DefaultTool` for the script's icon.
+ *
+ * Workbench resolves a relative default tool against the drawer the icon sits in before
+ * falling back to `C:`, which is what lets the bundled `Installer` beside this script run
+ * it on a machine that has no Installer of its own. `SYS:System/Installer` exists on
+ * 3.2.3, but it is not in `C:` and not on every machine.
  */
-export const INSTALLER_SCRIPT = `; Install Default Icons
-;
-; Written by kde2amiga. Double-click the icon beside this file, or from a Shell:
-;   execute "${INSTALLER_SCRIPT_NAME}"
+export const INSTALLER_DEFAULT_TOOL = 'Installer';
 
-FailAt 21
+/** The bundled Installer 43.3 executable, shipped byte-identical per licence clause B.1. */
+export const INSTALLER_BINARY_NAME = 'Installer';
 
-Echo "Installing default icons ..."
+/** Escom's licence, which clause B.5 requires travel with the binary. */
+export const INSTALLER_LICENSE_NAME = 'Installer.license';
 
-If NOT EXISTS ENVARC:Sys
-  MakeDir ENVARC:Sys
-EndIf
+/** Where replaced icons are kept, below whichever drawer the user picks. */
+const BACKUP_DRAWER = 'kde2amiga-backup';
 
-If NOT EXISTS ENV:Sys
-  MakeDir ENV:Sys
-EndIf
+export interface InstallerScriptOptions {
+  /** Whether any `def_*` icon was assigned, i.e. whether `Sys/` exists in the archive. */
+  hasDefaults: boolean;
+  /** Assigned targets keyed by archive drawer, from `targetsByDrawer`. */
+  drawers: Map<string, WorkbenchTarget[]>;
+}
 
-Copy ${SYS_DRAWER}/#?.info TO ENVARC:Sys CLONE
-Copy ${SYS_DRAWER}/#?.info TO ENV:Sys CLONE
+/**
+ * Builds the Installer 43.3 script for one archive.
+ *
+ * Generated rather than constant because the choices it offers have to match what is
+ * actually in the archive: an option to install Workbench icons, in a download that
+ * contains none, copies an absent drawer and reports success.
+ *
+ * Kept to plain ASCII and LF endings on purpose. AmigaDOS reads ISO-8859-1, so a smart
+ * quote would reach the Amiga as mojibake mid-command, and a CR would be read as part of
+ * an argument rather than as whitespace. Every string below comes from the catalogue,
+ * which is ASCII by construction — no user text ever reaches this file.
+ */
+export function buildInstallerScript(options: InstallerScriptOptions): string {
+  const { hasDefaults, drawers } = options;
+  const hasTargets = drawers.size > 0;
 
-Echo ""
-Echo "Done. ENVARC:Sys keeps them across reboots, ENV:Sys is the live copy."
-Echo "Icons already on screen keep their old look until the next reboot."
-Ask "Press RETURN to close this window"
-`;
+  const lines: string[] = [
+    `; ${INSTALLER_SCRIPT_NAME}`,
+    ';',
+    '; Written by kde2amiga. Double-click the icon beside this file.',
+    ';',
+    '; Installer and Installer project icon',
+    '; (c) Copyright 1995-96 Escom AG.  All Rights Reserved.',
+    '; Reproduced and distributed under license from Escom AG.',
+    '',
+    `(set @app-name "${INSTALLER_SCRIPT_NAME}")`,
+    '(set @default-dest "")',
+    '',
+  ];
+
+  lines.push(...choiceBlock(hasDefaults, hasTargets, drawers));
+  if (hasDefaults) lines.push(...defaultsBlock(hasTargets));
+  if (hasTargets) lines.push(...targetsBlock(drawers));
+
+  lines.push(
+    '(exit "Icons installed. Anything already drawn on screen keeps its old look"',
+    '      " until the next reboot.")',
+    '',
+  );
+
+  return lines.join('\n');
+}
+
+function choiceBlock(
+  hasDefaults: boolean,
+  hasTargets: boolean,
+  drawers: Map<string, WorkbenchTarget[]>,
+): string[] {
+  if (!hasTargets) return ['(set #what 1)', ''];
+  if (!hasDefaults) return ['(set #what 2)', '', ...warning(drawers)];
+
+  return [
+    '(set #what (askoptions',
+    '  (prompt "What would you like to install?")',
+    '  (help "System default icons fill in for files and drawers that have no icon"',
+    '        " of their own. Workbench icons replace the icons in Prefs, Tools and the"',
+    '        " other system drawers. Replaced icons are backed up first.")',
+    '  (choices "System default icons (ENVARC:Sys)"',
+    '           "Workbench icons")',
+    '  (default 3)))',
+    '',
+    ...warning(drawers),
+  ];
+}
+
+/**
+ * Named separately in the script because we cannot carry a correct value for it: the
+ * SCSI device differs from machine to machine, so the icon ships with the stock name and
+ * the user is told which one to check.
+ */
+function warning(drawers: Map<string, WorkbenchTarget[]>): string[] {
+  const flagged = [...drawers.values()].flat().filter((target) => target.machineSpecific);
+  if (flagged.length === 0) return [];
+
+  return [
+    '(message "One of these icons carries settings that differ between machines:\\n\\n"',
+    `         "  ${flagged.map((t) => t.name).join(', ')}\\n\\n"`,
+    '         "The stock settings are installed. If you had changed them, restore"',
+    '         " them from the backup after installing.")',
+    '',
+  ];
+}
+
+function defaultsBlock(hasTargets: boolean): string[] {
+  const guard = hasTargets ? '(if (IN #what 0)' : '(if (= #what 1)';
+
+  return [
+    guard,
+    '  (',
+    '    (makedir "ENVARC:Sys")',
+    '    (makedir "ENV:Sys")',
+    `    (copyfiles (source "${SYS_DRAWER}") (dest "ENVARC:Sys") (pattern "#?.info"))`,
+    `    (copyfiles (source "${SYS_DRAWER}") (dest "ENV:Sys") (pattern "#?.info"))`,
+    '  )',
+    ')',
+    '',
+  ];
+}
+
+function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
+  const lines = [
+    '(if (IN #what 1)',
+    '  (',
+    '    (set #backup (askdir',
+    '      (prompt "Where should the icons being replaced be kept?")',
+    '      (help "Every icon this replaces is copied here first, so you can put the"',
+    '            " originals back.")',
+    '      (default "SYS:Storage")))',
+    `    (set #backup (tackon #backup "${BACKUP_DRAWER}"))`,
+    '    (makedir #backup)',
+    '',
+  ];
+
+  for (const [archiveDrawer, targets] of drawers) {
+    // `Wb/SYS/Prefs` -> destination `SYS:Prefs`, backup subdrawer `SYS/Prefs`.
+    const branch = archiveDrawer.slice(`${WB_DRAWER}/`.length);
+    const [root, ...rest] = branch.split('/');
+    const destination = `${root}:${rest.join('/')}`;
+
+    lines.push(
+      `    ; ${destination} (${targets.length} icon${targets.length === 1 ? '' : 's'})`,
+      `    (set #here (tackon #backup "${branch}"))`,
+      '    (makedir #here)',
+      `    (foreach "${archiveDrawer}" "#?.info"`,
+      `      (if (exists (tackon "${destination}" @each-name))`,
+      `        (copyfiles (source (tackon "${destination}" @each-name)) (dest #here))))`,
+      `    (copyfiles (source "${archiveDrawer}") (dest "${destination}") (pattern "#?.info"))`,
+      '',
+    );
+  }
+
+  lines.push('  )', ')', '');
+  return lines;
+}

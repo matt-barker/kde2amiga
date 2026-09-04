@@ -127,6 +127,16 @@ describe('buildOutputEntries', () => {
     expect(readme).toMatch(/\.info/);
   });
 
+  /**
+   * Without this the user is left with a Wb/ tree, no word on what it is, and an
+   * installer whose second option appears from nowhere.
+   */
+  it('describes the Wb/ tree in the README when a target was assigned', () => {
+    const readme = readmeFor([icon({ target: 'SYS:Prefs/Font' })]);
+    expect(readme).toMatch(/Wb\//);
+    expect(readme).toMatch(/backup/);
+  });
+
   it('still includes the README when there are no icons at all', () => {
     expect(pathsOf([])).toEqual([`${ARCHIVE_BASE_NAME}/README.txt`]);
   });
@@ -176,10 +186,10 @@ describe('buildOutputEntries', () => {
 });
 
 /**
- * The archive carries its own installer so the user does not have to retype two Copy
- * commands into a Shell on a machine with no clipboard from the desktop.
+ * The archive carries its own installer so the user does not have to retype a pile of
+ * Copy commands into a Shell on a machine with no clipboard from the desktop.
  */
-describe('the Install Default Icons installer', () => {
+describe('the installer script', () => {
   const withRole = [icon({ role: 'drawer' })];
 
   it('ships the script and its icon beside the Sys drawer', () => {
@@ -192,7 +202,7 @@ describe('the Install Default Icons installer', () => {
     );
   });
 
-  it('gives the icon IconX as its default tool, which is what makes it double-clickable', () => {
+  it('gives the icon Installer as its default tool, which makes it double-clickable', () => {
     const icon = buildOutputEntries(withRole).find(
       (entry) => entry.path === `${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}.info`,
     );
@@ -203,7 +213,7 @@ describe('the Install Default Icons installer', () => {
     const script = buildOutputEntries(withRole).find(
       (entry) => entry.path === `${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}`,
     );
-    expect(textOf(script!.bytes)).toMatch(/Copy Sys\/#\?\.info TO ENVARC:Sys/);
+    expect(textOf(script!.bytes)).toContain('(copyfiles (source "Sys") (dest "ENVARC:Sys")');
   });
 
   /**
@@ -214,6 +224,15 @@ describe('the Install Default Icons installer', () => {
     const paths = pathsOf([icon()]);
     expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}`);
     expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}.info`);
+  });
+
+  /**
+   * A pack of nothing but Workbench replacements still has something to install, and the
+   * installer is the only thing that makes the backups before overwriting.
+   */
+  it('still ships when only Workbench targets were assigned', () => {
+    const paths = pathsOf([icon({ target: 'SYS:Prefs/Font' })]);
+    expect(paths).toContain(`${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}`);
   });
 
   it('points the README at the installer instead of only listing the Copy commands', () => {

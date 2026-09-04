@@ -1,13 +1,19 @@
 import { buildInstallerIcon } from './installerIcon';
 import {
-  INSTALLER_SCRIPT,
   INSTALLER_SCRIPT_NAME,
   SYS_DRAWER,
+  buildInstallerScript,
 } from './installerScript';
 import { buildInfoFile, type IconKind } from '../newicons/diskObject';
 import type { NewIconState } from '../newicons/newIconsEncoder';
 import { slotForRole, type DefaultIconRole } from './defaultIconSlots';
-import { archiveDrawerFor, targetForPath, type WorkbenchTargetPath } from './workbenchTargets';
+import {
+  WB_DRAWER,
+  archiveDrawerFor,
+  targetForPath,
+  targetsByDrawer,
+  type WorkbenchTargetPath,
+} from './workbenchTargets';
 
 /**
  * One converted icon, as image states rather than as a finished `.info`.
@@ -54,27 +60,25 @@ export interface ArchiveEntry {
 
 /**
  * Written per archive rather than as one constant: an archive with nothing tagged as a
- * default carries no `Sys/` drawer and no installer, and a README telling that user to
- * double-click a file that is not there is worse than no README at all.
+ * default carries no `Sys/` drawer and one with no targets carries no `Wb/` drawer, and
+ * a README telling that user to open a drawer that is not there — or to double-click an
+ * installer that was not shipped — is worse than no README at all.
  */
-function readmeText(hasDefaults: boolean): string {
-  const intro = `kde2amiga converted icons
+function readmeText(options: { hasDefaults: boolean; hasTargets: boolean }): string {
+  const { hasDefaults, hasTargets } = options;
+
+  let text = `kde2amiga converted icons
 ==========================
 
 Each <name>.info file can be copied next to its matching drawer/file on your
 Amiga and used immediately.
 `;
 
-  if (!hasDefaults) return intro;
-
-  return `${intro}
+  if (hasDefaults) {
+    text += `
 The icons you tagged as system-wide defaults are under ${SYS_DRAWER}/ (for example
-${SYS_DRAWER}/def_drawer.info). To install them, double-click "${INSTALLER_SCRIPT_NAME}"
-in this drawer, or run it from a Shell:
-
-  execute "${INSTALLER_SCRIPT_NAME}"
-
-It copies them into BOTH of these locations:
+${SYS_DRAWER}/def_drawer.info). The installer copies them into BOTH of these
+locations:
 
   ENVARC:Sys/   (persists across reboots)
   ENV:Sys/      (the live copy Workbench and Directory Opus 5 read right now)
@@ -82,6 +86,26 @@ It copies them into BOTH of these locations:
 Copying to ENVARC:Sys/ alone would only take effect after your next reboot.
 Icons already drawn on screen keep their old look until then either way.
 `;
+  }
+
+  if (hasTargets) {
+    text += `
+The icons you assigned to Workbench locations are under ${WB_DRAWER}/, laid out the
+same way your Amiga is - ${WB_DRAWER}/SYS/Prefs/Font.info replaces SYS:Prefs/Font.info.
+The installer copies each original into a backup drawer before replacing it.
+`;
+  }
+
+  if (hasDefaults || hasTargets) {
+    text += `
+To install, double-click "${INSTALLER_SCRIPT_NAME}" in this drawer, or run it
+from a Shell in this drawer:
+
+  Installer "${INSTALLER_SCRIPT_NAME}"
+`;
+  }
+
+  return text;
 }
 
 /**
@@ -158,17 +182,25 @@ export function buildOutputEntries(
     }
   }
 
-  /*
-   * The installer only ships alongside something to install. On an archive with no
-   * tagged defaults it would copy an absent drawer and still report success, which
-   * is a worse answer than not offering it.
-   */
   const hasDefaults = icons.some((icon) => icon.role !== undefined);
-  if (hasDefaults) {
-    entries.push({ path: at(INSTALLER_SCRIPT_NAME), bytes: encodeLatin1(INSTALLER_SCRIPT) });
+  const drawers = targetsByDrawer(
+    icons.flatMap((icon) => (icon.target ? [icon.target] : [])),
+  );
+
+  /*
+   * The installer only ships alongside something to install. On an archive with neither
+   * defaults nor targets it would copy absent drawers and still report success, which is
+   * a worse answer than not offering it.
+   */
+  if (hasDefaults || drawers.size > 0) {
+    const script = buildInstallerScript({ hasDefaults, drawers });
+    entries.push({ path: at(INSTALLER_SCRIPT_NAME), bytes: encodeLatin1(script) });
     entries.push({ path: at(`${INSTALLER_SCRIPT_NAME}.info`), bytes: buildInstallerIcon() });
   }
 
-  entries.push({ path: at('README.txt'), bytes: encodeLatin1(readmeText(hasDefaults)) });
+  entries.push({
+    path: at('README.txt'),
+    bytes: encodeLatin1(readmeText({ hasDefaults, hasTargets: drawers.size > 0 })),
+  });
   return entries;
 }

@@ -1,6 +1,6 @@
 import { buildInfoFile } from '../newicons/diskObject';
 import type { NewIconState } from '../newicons/newIconsEncoder';
-import { INSTALLER_DEFAULT_TOOL } from './installerScript';
+import { INSTALLER_DEFAULT_TOOL, INSTALLER_SCRIPT_NAME } from './installerScript';
 
 export const INSTALLER_ICON_SIZE = 32;
 
@@ -100,9 +100,8 @@ function state(pixels: number[]): NewIconState {
 }
 
 /**
- * The `.info` for the "Install Default Icons" script: an ordinary project icon whose
- * default tool is IconX, which is what makes an AmigaDOS script double-clickable from
- * Workbench.
+ * The `.info` for the installer script: an ordinary project icon whose default tool is
+ * Installer, which is what makes the script double-clickable from Workbench.
  */
 export function buildInstallerIcon(): Uint8Array {
   const normal = glyphPixels();
@@ -116,5 +115,8 @@ export function buildInstallerIcon(): Uint8Array {
     normal: state(normal),
     selected: state(selected),
     defaultTool: INSTALLER_DEFAULT_TOOL,
+    // What the Installer reads off its own icon: the window title, and the experience
+    // level the script is written for. Without APPNAME the window is titled "Unnamed".
+    toolTypes: [`APPNAME=${INSTALLER_SCRIPT_NAME}`, 'MINUSER=AVERAGE'],
   });
 }

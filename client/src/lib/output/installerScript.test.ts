@@ -1,76 +1,74 @@
 import { describe, it, expect } from 'vitest';
-import {
-  INSTALLER_SCRIPT,
-  INSTALLER_SCRIPT_NAME,
-  INSTALLER_DEFAULT_TOOL,
-  SYS_DRAWER,
-} from './installerScript';
+import { buildInstallerScript, INSTALLER_SCRIPT_NAME } from './installerScript';
+import { targetsByDrawer } from './workbenchTargets';
 
-describe('the Install Default Icons script', () => {
-  /**
-   * Both destinations, for the reason the README already gives: ENVARC:Sys survives a
-   * reboot but is not read live, and ENV:Sys is read live but is rebuilt from ENVARC on
-   * every boot. Writing only one of them either does nothing now or nothing later.
-   */
-  it('copies the Sys drawer to both ENVARC:Sys and ENV:Sys', () => {
-    expect(INSTALLER_SCRIPT).toMatch(/Copy\s+Sys\/#\?\.info\s+TO\s+ENVARC:Sys/);
-    expect(INSTALLER_SCRIPT).toMatch(/Copy\s+Sys\/#\?\.info\s+TO\s+ENV:Sys/);
+const script = (paths: string[], hasDefaults = true) =>
+  buildInstallerScript({ hasDefaults, drawers: targetsByDrawer(paths) });
+
+describe('buildInstallerScript', () => {
+  it('names itself, so the Installer window is not called "Unnamed"', () => {
+    expect(script([])).toContain(`(set @app-name "${INSTALLER_SCRIPT_NAME}")`);
+  });
+
+  it('offers both halves, defaulted to both, when there is something in each', () => {
+    const text = script(['SYS:Prefs/Font']);
+    expect(text).toContain('(askoptions');
+    expect(text).toContain('"System default icons (ENVARC:Sys)"');
+    expect(text).toContain('"Workbench icons"');
+    expect(text).toContain('(default 3)');
   });
 
   /**
-   * IconX sets the current directory to the drawer holding the script, so the source is
-   * relative and the archive can be unpacked anywhere. An absolute source would only
-   * work for a user who unpacked into the one drawer we happened to guess.
+   * ENVARC: survives a reboot and ENV: is what Workbench is reading now. Writing only
+   * the first leaves the user staring at their old icons and concluding it failed.
    */
-  it('names its source relative to the drawer it sits in', () => {
-    for (const line of INSTALLER_SCRIPT.split('\n')) {
-      if (!line.startsWith('Copy')) continue;
-      expect(line).not.toMatch(/Copy\s+\w+:/);
-    }
+  it('copies the default icons into both ENVARC:Sys and ENV:Sys', () => {
+    const text = script([]);
+    expect(text).toContain('(dest "ENVARC:Sys")');
+    expect(text).toContain('(dest "ENV:Sys")');
   });
 
-  it('creates the destination drawers rather than assuming they exist', () => {
-    expect(INSTALLER_SCRIPT).toMatch(/If NOT EXISTS ENVARC:Sys[\s\S]*?MakeDir ENVARC:Sys/);
-    expect(INSTALLER_SCRIPT).toMatch(/If NOT EXISTS ENV:Sys[\s\S]*?MakeDir ENV:Sys/);
+  it('emits one copy block per assigned drawer and no others', () => {
+    const text = script(['SYS:Prefs/Font', 'SYS:Prefs/Asl', 'SYS:WBStartup/DefIcons']);
+
+    expect(text).toContain('(dest "SYS:Prefs")');
+    expect(text).toContain('(dest "SYS:WBStartup")');
+    expect(text).not.toContain('(dest "SYS:Tools")');
   });
 
   /**
-   * IconX closes its window the moment the script ends, so without a pause the user
-   * sees a flash and no confirmation that anything happened.
+   * The backup is the only thing standing between a user and an unrecoverable overwrite,
+   * so it has to happen before the copy, not merely somewhere in the same script.
    */
-  it('holds the window open at the end', () => {
-    expect(INSTALLER_SCRIPT.trimEnd().split('\n').pop()).toMatch(/^Ask /);
+  it('backs up an existing icon before overwriting it', () => {
+    const text = script(['SYS:Prefs/Font']);
+
+    const backup = text.indexOf('kde2amiga-backup');
+    const copy = text.indexOf('(dest "SYS:Prefs")');
+    expect(backup).toBeGreaterThan(-1);
+    expect(backup).toBeLessThan(copy);
+    expect(text).toContain('(exists (tackon');
   });
 
-  it('tells the user the change is not visible until a reboot', () => {
-    expect(INSTALLER_SCRIPT).toMatch(/reboot/i);
+  it('does not offer Workbench icons when no target is assigned', () => {
+    const text = script([]);
+    expect(text).not.toContain('"Workbench icons"');
+    expect(text).not.toContain('askdir');
+  });
+
+  it('warns about a machine-specific target only when one is being installed', () => {
+    expect(script(['SYS:Tools/HDToolBox'])).toContain('HDToolBox');
+    expect(script(['SYS:Prefs/Font'])).not.toContain('HDToolBox');
   });
 
   /**
-   * AmigaDOS reads ISO-8859-1 and needs CR-free lines; a stray character from a smart
-   * quote would land as mojibake mid-command.
+   * AmigaDOS reads ISO-8859-1 and treats CR as part of an argument rather than as
+   * whitespace, so a smart quote or a CRLF pasted in here reaches the Amiga as a broken
+   * command. Cheaper to pin than to debug on hardware.
    */
-  it('is plain ASCII with LF line endings', () => {
-    expect(INSTALLER_SCRIPT).not.toMatch(/\r/);
-    for (let i = 0; i < INSTALLER_SCRIPT.length; i++) {
-      expect(INSTALLER_SCRIPT.charCodeAt(i)).toBeLessThan(128);
-    }
-  });
-
-  it('is named so Workbench pairs it with Install Default Icons.info', () => {
-    expect(INSTALLER_SCRIPT_NAME).toBe('Install Default Icons');
-  });
-
-  it('runs through IconX, the tool AmigaOS ships for scripts started from Workbench', () => {
-    expect(INSTALLER_DEFAULT_TOOL).toBe('IconX');
-  });
-
-  /**
-   * The drawer name is shared with the archive layout rather than written out twice:
-   * a script copying from Sys/ while the builder wrote to System/ fails silently on
-   * the Amiga and nowhere else.
-   */
-  it('copies from the same drawer the archive layout writes to', () => {
-    expect(INSTALLER_SCRIPT).toContain(`${SYS_DRAWER}/#?.info`);
+  it('stays plain ASCII with LF endings', () => {
+    const text = script(['SYS:Prefs/Font', 'SYS:Tools/HDToolBox']);
+    expect(text).not.toContain('\r');
+    expect([...text].every((ch) => ch.charCodeAt(0) < 128)).toBe(true);
   });
 });

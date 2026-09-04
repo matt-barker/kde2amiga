@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildInstallerIcon, INSTALLER_ICON_SIZE } from './installerIcon';
 import { decodeInfoFileForTest } from '../newicons/diskObjectDecoderForTest';
-import { INSTALLER_DEFAULT_TOOL } from './installerScript';
+import { INSTALLER_SCRIPT_NAME } from './installerScript';
 
 const decoded = () => decodeInfoFileForTest(buildInstallerIcon());
 
@@ -10,8 +10,12 @@ describe('buildInstallerIcon', () => {
     expect(decoded().type).toBe(4);
   });
 
-  it('carries IconX as its default tool', () => {
-    expect(decoded().defaultTool).toBe(INSTALLER_DEFAULT_TOOL);
+  it('carries Installer as its default tool, so double-clicking runs the script', () => {
+    expect(decoded().defaultTool).toBe('Installer');
+  });
+
+  it('names the application, so the Installer window is not titled "Unnamed"', () => {
+    expect(decoded().toolTypes[0]).toBe(`APPNAME=${INSTALLER_SCRIPT_NAME}`);
   });
 
   it('is square, at the size the glyph is drawn', () => {
@@ -50,8 +54,8 @@ describe('buildInstallerIcon', () => {
 
   /**
    * The selected state has to be visibly different or the icon looks dead when clicked.
-   * It inverts, which is what `DEFAULT_JOB_CONFIG` picks for the converted icons too,
-   * so the installer behaves like the rest of the pack.
+   * This glyph is hand-authored with its own pre-inverted palette rather than run through
+   * the conversion pipeline, so it does not track whichever effect the job config picks.
    */
   it('shows an inverted selected state over the same shape', () => {
     const icon = decoded();
