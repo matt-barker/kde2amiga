@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildInstallerScript, INSTALLER_SCRIPT_NAME } from './installerScript';
+import { buildInstallerScript, INSTALLER_SCRIPT_NAME, BACKUP_DRAWER } from './installerScript';
 import { targetsByDrawer } from './workbenchTargets';
 
 const script = (paths: string[], hasDefaults = true) =>
@@ -86,6 +86,21 @@ describe('buildInstallerScript', () => {
     const page = text.indexOf('These Workbench drawers are about to change');
     expect(page).toBeLessThan(text.indexOf('(askdir'));
     expect(page).toBeLessThan(text.indexOf('(copyfiles (source "Wb/'));
+  });
+
+  /**
+   * `askdir` asks for a parent, but what the user gets is a new drawer inside it. Left
+   * unsaid, someone aiming the backup at an existing drawer expects the icons to land
+   * there loose, and cannot find them afterwards.
+   */
+  it('says the backup drawer will be created inside the chosen directory', () => {
+    const text = script(['SYS:Prefs/Font']);
+    // `(default` also appears in the earlier askoptions, so anchor the end after the askdir.
+    const at = text.indexOf('(askdir');
+    const prompt = text.slice(at, text.indexOf('(default', at));
+
+    expect(prompt).toContain(BACKUP_DRAWER);
+    expect(prompt).toMatch(/will be created/i);
   });
 
   /**

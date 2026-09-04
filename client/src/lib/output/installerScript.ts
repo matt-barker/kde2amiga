@@ -204,7 +204,10 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
     '  (',
     ...confirmationPage(drawers),
     '    (set #backup (askdir',
-    '      (prompt "Where should the icons being replaced be kept?")',
+    '      (prompt "Where should the icons being replaced be kept?"',
+    // askdir asks for a parent but hands back a drawer inside it, so say so: aimed at an
+    // existing drawer, the originals are not where the user just pointed.
+    `            "\\n\\nA new drawer called ${BACKUP_DRAWER} will be created here.")`,
     '      (help "Every icon this replaces is copied here first, so you can put the"',
     '            " originals back.")',
     `      (default "${BACKUP_DEFAULT_DIR}")))`,
