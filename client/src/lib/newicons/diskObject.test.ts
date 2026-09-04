@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildInfoFile } from './diskObject';
+import { buildInfoFile, type IconKind } from './diskObject';
 import { decodeInfoFileForTest } from './diskObjectDecoderForTest';
 import type { NewIconState } from './newIconsEncoder';
 
@@ -67,10 +67,15 @@ describe('buildInfoFile', () => {
     }
   });
 
-  it('does not write DrawerData for non-drawer, non-trashcan kinds', () => {
+  /*
+   * `disk` was in this list once, asserting the very defect it was meant to guard against:
+   * workbench.h requires do_DrawerData for WBDISK as much as for WBDRAWER. See the
+   * "do_DrawerData by icon type" tests below for the rule and the hardware evidence.
+   */
+  it('does not write DrawerData for kinds that open no window', () => {
     const normal = makeState(4, 4);
     const selected = makeState(4, 4);
-    for (const kind of ['disk', 'tool', 'project'] as const) {
+    for (const kind of ['tool', 'project'] as const) {
       const bytes = buildInfoFile({ width: 4, height: 4, kind, normal, selected });
       // hasDrawerData is the DWORD at offset 66 (see the 78-byte header layout).
       const hasDrawerData = (bytes[66] << 24) | (bytes[67] << 16) | (bytes[68] << 8) | bytes[69];
@@ -244,5 +249,47 @@ describe('buildInfoFile', () => {
     } as const;
 
     expect(buildInfoFile({ ...shared, toolTypes: [] })).toEqual(buildInfoFile(shared));
+  });
+});
+
+/**
+ * `do_DrawerData` is required for WBDISK (1), WBDRAWER (2) and WBGARBAGE (5) — every icon
+ * type that opens a window — and meaningless for WBTOOL (3) and WBPROJECT (4).
+ *
+ * Disk was missing from that set once, so `def_disk.info` declared type 1 while claiming
+ * no DrawerData. Directory Opus on OS 3.2.3 dropped the file from its listing entirely
+ * while every other `def_*` icon showed, which is what a reader does when the type byte
+ * promises a structure that is not there.
+ *
+ * Nothing round-trip can catch this: our own decoder reads `hasDrawerData` out of the file
+ * rather than deriving it from the type, so it faithfully reproduces a wrong flag. The
+ * reference is `Disk.info` from a real 3.2.3 install, which carries DrawerData with type 1.
+ */
+describe('do_DrawerData by icon type', () => {
+  const hasDrawerData = (kind: IconKind) => {
+    const bytes = buildInfoFile({
+      width: 8, height: 8, kind, normal: makeState(8, 8), selected: makeState(8, 8),
+    });
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(66) !== 0;
+  };
+
+  it('writes DrawerData for every icon type that opens a window', () => {
+    expect(hasDrawerData('disk')).toBe(true);
+    expect(hasDrawerData('drawer')).toBe(true);
+    expect(hasDrawerData('trashcan')).toBe(true);
+  });
+
+  it('omits it for tools and projects, which have no window', () => {
+    expect(hasDrawerData('tool')).toBe(false);
+    expect(hasDrawerData('project')).toBe(false);
+  });
+
+  it('makes a disk icon exactly the 62 bytes longer that DrawerData and its tail cost', () => {
+    const of = (kind: IconKind) =>
+      buildInfoFile({
+        width: 8, height: 8, kind, normal: makeState(8, 8), selected: makeState(8, 8),
+      }).length;
+    // 56 bytes of DrawerData after the header, plus the 6-byte OS2.x tail after ToolTypes.
+    expect(of('disk') - of('tool')).toBe(62);
   });
 });

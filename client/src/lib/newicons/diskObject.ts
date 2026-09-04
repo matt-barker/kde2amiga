@@ -60,7 +60,14 @@ export function buildInfoFile(params: {
 }): Uint8Array {
   const { width, height, kind, normal, selected, defaultTool, toolTypes: carried } = params;
 
-  const isDrawerLike = kind === 'drawer' || kind === 'trashcan';
+  /*
+   * WBDISK, WBDRAWER and WBGARBAGE all open a window, and workbench.h requires
+   * do_DrawerData for each of them. Disk was omitted here once: `def_disk.info` then
+   * declared type 1 while claiming no DrawerData, and Directory Opus on OS 3.2.3 dropped
+   * it from the listing while every sibling def_ icon showed. Checked against Disk.info
+   * from a real 3.2.3 install, which carries DrawerData with type 1.
+   */
+  const opensAWindow = kind === 'disk' || kind === 'drawer' || kind === 'trashcan';
 
   const toolTypes = [
     ...(carried ?? []),
@@ -100,11 +107,11 @@ export function buildInfoFile(params: {
   // replaced drawer needs re-arranging and Snapshotting.
   w.writeLong(128 << 24); // currentX
   w.writeLong(128 << 24); // currentY
-  w.writeDWord(isDrawerLike ? 1 : 0); // hasDrawerData
+  w.writeDWord(opensAWindow ? 1 : 0); // hasDrawerData
   w.writeDWord(0); // hasToolWindow
   w.writeDWord(8192); // stackSize
 
-  if (isDrawerLike) writeDrawerData(w);
+  if (opensAWindow) writeDrawerData(w);
 
   writeClassicImage(w, width, height, false);
   writeClassicImage(w, width, height, true);
@@ -126,9 +133,10 @@ export function buildInfoFile(params: {
   }
 
   // OS2.x/3.x drawer tail (6 bytes): dd_Flags (LONG) + dd_ViewModes (UWORD).
-  // Required whenever hasDrawerData && userData (userData = 1 for all icons we write).
+  // Required whenever hasDrawerData && userData (userData = 1 for all icons we write),
+  // so it follows do_DrawerData for disks as well as drawers and trashcans.
   // Zeros mean DDFLAGS_SHOWDEFAULT / DDVM_BYDEFAULT, i.e. "use Workbench's defaults".
-  if (isDrawerLike) {
+  if (opensAWindow) {
     w.writeDWord(0); // dd_Flags
     w.writeWord(0); // dd_ViewModes
   }
@@ -139,7 +147,7 @@ export function buildInfoFile(params: {
 /**
  * DrawerData (56 bytes): a NewWindow (48 bytes) followed by CurrentX/CurrentY (LONG each).
  * Written immediately after the 78-byte DiskObject header and before the images, for
- * do_Type 2 (drawer) and 5 (trashcan) icons only.
+ * do_Type 1 (disk), 2 (drawer) and 5 (trashcan) icons — everything that opens a window.
  */
 function writeDrawerData(w: BinaryWriter): void {
   // NewWindow (48 bytes)
