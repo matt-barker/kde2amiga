@@ -135,7 +135,8 @@ describe('buildInfoFile', () => {
 
   /**
    * A project icon's do_DefaultTool is the program Workbench runs on double-click. The
-   * archive's "Install Default Icons" icon needs it set to IconX; every other icon we
+   * archive's own installer icon needs one set, and so does a converted icon that
+   * replaces a Workbench project icon such as `SYS:System/Shell`; every other icon we
    * write leaves it empty, which is why it stayed hardcoded to 0 until now.
    *
    * The string is written between the select-render image and the ToolTypes array,

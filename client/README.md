@@ -30,3 +30,16 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Installer
+
+Converted archives carry Installer 43.3 so they can be installed on an Amiga that has no
+Installer of its own. Only the binary and its licence are redistributed; `Installer.guide`
+and the sample scripts are not, per licence clause B.3.
+
+    Installer and Installer project icon (c) Copyright 1995-96 Escom AG.  All Rights Reserved.  Reproduced and distributed under license from Escom AG.
+
+    INSTALLER SOFTWARE IS PROVIDED "AS-IS" AND SUBJECT TO CHANGE; NO WARRANTIES ARE MADE.  ALL USE IS AT YOUR OWN RISK.  NO LIABILITY OR RESPONSIBILITY IS ASSUMED.
+
+Clause B.10 requires a signed agreement posted to AMIGA Technologies GmbH, which has not
+existed since 1996. That term cannot be satisfied; every other term is met.

@@ -40,9 +40,11 @@ export function buildInfoFile(params: {
   /**
    * The program Workbench runs when this icon is double-clicked (`do_DefaultTool`).
    *
-   * Only the archive's "Install Default Icons" icon sets it, to `IconX`; converted
-   * icons stand next to files that already have their own tool, and a DefaultTool
-   * they did not ask for would hijack the double-click.
+   * Set by the archive's own "Install kde2amiga Icons" icon, to `Installer`, and by any
+   * converted icon that targets a Workbench entry whose original carries a default
+   * tool (a project icon such as `SYS:System/Shell` has nothing to run without one).
+   * Icons that only stand next to a file, or that only fill a `def_` slot, leave it
+   * unset — a DefaultTool they did not ask for would hijack the double-click.
    */
   defaultTool?: string;
   /**
