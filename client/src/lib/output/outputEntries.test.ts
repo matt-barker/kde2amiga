@@ -142,6 +142,33 @@ describe('buildOutputEntries', () => {
     expect(readme).toMatch(/backup/);
   });
 
+  /**
+   * This README is what someone opens when the install went wrong, on a machine with no
+   * text search and no memory of which drawer they picked in the askdir. "Copied into a
+   * backup drawer" is not a restore procedure; a path and a Copy line are.
+   */
+  it('names where the backup went and how to put a drawer back', () => {
+    const readme = readmeFor([icon({ target: 'SYS:Prefs/Font' })]);
+
+    expect(readme).toContain('SYS:Storage/kde2amiga-backup/SYS/Prefs/Font.info');
+    expect(readme).toContain(
+      'Copy SYS:Storage/kde2amiga-backup/SYS/Prefs/#?.info TO SYS:Prefs',
+    );
+  });
+
+  /**
+   * Nothing in the archive can carry an icon's saved position or a drawer's window
+   * geometry across a replacement, so the only honest handling is to say so where the
+   * user will read it.
+   */
+  it('says that replaced icons lose their positions and need Snapshotting', () => {
+    const readme = readmeFor([icon({ target: 'SYS:Prefs/Font' })]);
+
+    expect(readme).toMatch(/loses its position in the drawer/);
+    expect(readme).toMatch(/window size and position/);
+    expect(readme).toMatch(/Icons\/Snapshot/);
+  });
+
   it('still includes the README when there are no icons at all', () => {
     expect(pathsOf([])).toEqual([`${ARCHIVE_BASE_NAME}/README.txt`]);
   });

@@ -57,6 +57,11 @@ const ICONS: ConvertedIcon[] = [
     kind: 'tool',
     normal: state(32, 1),
     selected: state(32, 0),
+    // Carries a Workbench target so the comparison sees a three-level path. Everything
+    // else here is one or two levels deep, and this is the only test that puts both
+    // archives through their real readers — a format that mangled `Wb/SYS/Prefs/` would
+    // have got past it. Real `lha` round-trips such a path; this keeps it that way.
+    target: 'SYS:Prefs/Font',
   },
   {
     name: 'trash',
@@ -187,5 +192,15 @@ describe('zip and LHA parity, verified by Lhasa', () => {
         `${ARCHIVE_BASE_NAME}/Sys/def_trashcan.info`,
       ]),
     );
+  });
+
+  /**
+   * The deepest path either format has to carry. Asserted against what Lhasa actually
+   * wrote to disk rather than against the entry list, because the two-level `Sys/` case
+   * proved nothing about a third level.
+   */
+  it('carries the three-level Wb/ tree through the LHA', async () => {
+    const lha = await unpackLha(ICONS);
+    expect([...lha.keys()]).toContain(`${ARCHIVE_BASE_NAME}/Wb/SYS/Prefs/Font.info`);
   });
 });

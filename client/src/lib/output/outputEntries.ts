@@ -1,6 +1,8 @@
 import { buildInstallerIcon } from './installerIcon';
 import type { InstallerFiles } from './installerBinary';
 import {
+  BACKUP_DEFAULT_DIR,
+  BACKUP_DRAWER,
   INSTALLER_BINARY_NAME,
   INSTALLER_LICENSE_NAME,
   INSTALLER_SCRIPT_NAME,
@@ -95,7 +97,28 @@ Icons already drawn on screen keep their old look until then either way.
     text += `
 The icons you assigned to Workbench locations are under ${WB_DRAWER}/, laid out the
 same way your Amiga is - ${WB_DRAWER}/SYS/Prefs/Font.info replaces SYS:Prefs/Font.info.
-The installer copies each original into a backup drawer before replacing it.
+
+Backups
+-------
+
+The installer copies each original into a backup drawer before replacing it. That
+drawer is wherever you point the installer, with ${BACKUP_DRAWER}/ below it and the
+Workbench tree mirrored below that. Answer the installer's question with the
+default and SYS:Prefs/Font.info is kept as:
+
+  ${BACKUP_DEFAULT_DIR}/${BACKUP_DRAWER}/SYS/Prefs/Font.info
+
+To put a whole drawer's originals back, from a Shell:
+
+  Copy ${BACKUP_DEFAULT_DIR}/${BACKUP_DRAWER}/SYS/Prefs/#?.info TO SYS:Prefs
+
+Installing a second time will not overwrite a backup that is already there, so the
+originals stay the originals however many themes you try.
+
+One thing the backup exists for: a replaced icon loses its position in the drawer,
+and a replaced drawer loses its window size and position, because nothing in this
+archive can read those out of the icon it is replacing. Re-arrange the drawer and
+use Icons/Snapshot once you are happy with it.
 `;
   }
 

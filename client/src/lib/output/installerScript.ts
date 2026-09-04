@@ -1,4 +1,9 @@
-import { WB_DRAWER, type WorkbenchTarget } from './workbenchTargets';
+import {
+  archiveBranchFor,
+  archiveDrawerFor,
+  targetDestination,
+  type WorkbenchTarget,
+} from './workbenchTargets';
 
 /**
  * The drawer inside the archive that holds the `def_*.info` copies.
@@ -36,7 +41,16 @@ export const INSTALLER_BINARY_NAME = 'Installer';
 export const INSTALLER_LICENSE_NAME = 'Installer.license';
 
 /** Where replaced icons are kept, below whichever drawer the user picks. */
-const BACKUP_DRAWER = 'kde2amiga-backup';
+export const BACKUP_DRAWER = 'kde2amiga-backup';
+
+/**
+ * The drawer `askdir` offers first.
+ *
+ * Exported so the archive's README can name the whole backup path concretely. The README
+ * is what someone reaches for when an install has gone wrong, on a machine with no text
+ * search, and "wherever you told the installer to put it" is not an answer at that point.
+ */
+export const BACKUP_DEFAULT_DIR = 'SYS:Storage';
 
 export interface InstallerScriptOptions {
   /** Whether any `def_*` icon was assigned, i.e. whether `Sys/` exists in the archive. */
@@ -111,25 +125,61 @@ function choiceBlock(hasDefaults: boolean, hasTargets: boolean): string[] {
 }
 
 /**
- * Named separately in the script because we cannot carry a correct value for it: the
- * SCSI device differs from machine to machine, so the icon ships with the stock name and
- * the user is told which one to check.
+ * Lays out one Installer `(message ...)`, whose arguments are concatenated as written.
  *
- * Indented for, and emitted inside, the Workbench guard. Told to a user who unticked
- * "Workbench icons" it would claim stock settings were installed over changes that were
- * in fact left alone, which is worse than saying nothing.
+ * The parts arrive already quoted, because each one carries its own `\\n` escapes and
+ * spacing; this only decides where they sit on the page.
  */
-function warning(drawers: Map<string, WorkbenchTarget[]>): string[] {
-  const flagged = [...drawers.values()].flat().filter((target) => target.machineSpecific);
-  if (flagged.length === 0) return [];
+function messageBlock(indent: string, parts: string[]): string[] {
+  const pad = ' '.repeat(indent.length + '(message '.length);
+  return parts.map((part, i) => {
+    const head = i === 0 ? `${indent}(message ` : pad;
+    return `${head}${part}${i === parts.length - 1 ? ')' : ''}`;
+  });
+}
 
-  return [
-    '    (message "One of these icons carries settings that differ between machines:\\n\\n"',
-    `             "  ${flagged.map((t) => t.name).join(', ')}\\n\\n"`,
-    '             "The stock settings are installed. If you had changed them, restore"',
-    '             " them from the backup after installing.")',
-    '',
-  ];
+/**
+ * The page the user reads before anything is overwritten.
+ *
+ * Required by the spec: it lists the drawers about to change and names any
+ * machine-specific target among them. Both live in one `(message ...)` rather than two
+ * back to back, because a second requester after "Proceed" reads as a second question
+ * rather than as the rest of the first answer.
+ *
+ * Indented for, and emitted inside, the Workbench guard, ahead of the askdir. Told to a
+ * user who unticked "Workbench icons" it would claim stock settings were installed over
+ * changes that were in fact left alone, which is worse than saying nothing.
+ */
+function confirmationPage(drawers: Map<string, WorkbenchTarget[]>): string[] {
+  const parts = ['"These Workbench drawers are about to change:\\n\\n"'];
+
+  for (const targets of drawers.values()) {
+    const count = `${targets.length} icon${targets.length === 1 ? '' : 's'}`;
+    parts.push(`"  ${targetDestination(targets[0])}  (${count})\\n"`);
+  }
+
+  parts.push(
+    '"\\nEach icon replaced is copied to the backup drawer you pick on the next"',
+    '" page, so you can put the originals back.\\n\\n"',
+    // Nothing in the archive can carry these across: the Installer cannot read the
+    // coordinates out of the icon it is about to overwrite, so the user is told instead
+    // of being left to find a scrambled Prefs drawer and wonder what else broke.
+    '"Replaced icons lose their positions in the drawer, and replaced drawers lose"',
+    '" their window size and position. Re-arrange them and use Icons/Snapshot once"',
+    '" you are happy.\\n"',
+  );
+
+  const flagged = [...drawers.values()].flat().filter((target) => target.machineSpecific);
+  if (flagged.length > 0) {
+    parts.push(
+      '"\\nThese icons carry settings that differ between machines:\\n\\n"',
+      `"  ${flagged.map((t) => t.name).join(', ')}\\n\\n"`,
+      '"The stock settings are installed. If you had changed them, restore them from"',
+      '" the backup after installing.\\n"',
+    );
+  }
+
+  return [...messageBlock('    ', parts), ''];
 }
 
 function defaultsBlock(): string[] {
@@ -152,22 +202,24 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
   const lines = [
     '(if (IN #what 1)',
     '  (',
-    ...warning(drawers),
+    ...confirmationPage(drawers),
     '    (set #backup (askdir',
     '      (prompt "Where should the icons being replaced be kept?")',
     '      (help "Every icon this replaces is copied here first, so you can put the"',
     '            " originals back.")',
-    '      (default "SYS:Storage")))',
+    `      (default "${BACKUP_DEFAULT_DIR}")))`,
     `    (set #backup (tackon #backup "${BACKUP_DRAWER}"))`,
     '    (makedir #backup)',
     '',
   ];
 
-  for (const [archiveDrawer, targets] of drawers) {
-    // `Wb/SYS/Prefs` -> destination `SYS:Prefs`, backup subdrawer `SYS/Prefs`.
-    const branch = archiveDrawer.slice(`${WB_DRAWER}/`.length);
-    const [root, ...rest] = branch.split('/');
-    const destination = `${root}:${rest.join('/')}`;
+  // Every target in a group shares a root and a drawer — that pair is what the group was
+  // keyed on — so the first one speaks for all of them. Both paths are read off the
+  // catalogue rather than sliced back out of the archive path: the destination is what
+  // the catalogue states, and re-deriving it would give the same string two owners.
+  for (const targets of drawers.values()) {
+    const destination = targetDestination(targets[0]);
+    const archiveDrawer = archiveDrawerFor(targets[0]);
 
     lines.push(
       `    ; ${destination} (${targets.length} icon${targets.length === 1 ? '' : 's'})`,
@@ -178,13 +230,19 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
     // does not create intermediate drawers and Installer's `makedir` is not documented
     // to either, and this is the drawer holding the only copy of the icon about to be
     // overwritten — a failure here aborts the install with the user's original gone.
-    for (const level of branch.split('/')) {
+    for (const level of archiveBranchFor(targets[0])) {
       lines.push(`    (set #here (tackon #here "${level}"))`, '    (makedir #here)');
     }
 
     lines.push(
+      // The second condition is what makes a re-run safe. `copyfiles` overwrites without
+      // asking, so backing up whenever the destination exists means run 2 finds run 1's
+      // icon at that path and copies it over the stock original — which is then gone from
+      // the machine entirely, with the backup drawer still looking like it worked. A
+      // second theme, a retry after an abort, or adding one more drawer all do it.
       `    (foreach "${archiveDrawer}" "#?.info"`,
-      `      (if (exists (tackon "${destination}" @each-name))`,
+      `      (if (AND (exists (tackon "${destination}" @each-name))`,
+      '               (NOT (exists (tackon #here @each-name))))',
       `        (copyfiles (source (tackon "${destination}" @each-name)) (dest #here))))`,
       `    (copyfiles (source "${archiveDrawer}") (dest "${destination}") (pattern "#?.info"))`,
       '',

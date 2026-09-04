@@ -18,18 +18,33 @@ rather than a restore.
       System default icons only, Workbench icons only, and both together. Expected: no
       "Script error" requester, and the drawer list on the confirmation page matches what
       was assigned.
-- [ ] **3. Backup round-trips.** Note `SYS:Prefs/Font.info`'s look, install, confirm it
-      changed, then copy the backup back from `SYS:Storage/kde2amiga-backup/SYS/Prefs`.
+- [ ] **3. Backup round-trips, twice.** Note `SYS:Prefs/Font.info`'s look, install, confirm
+      it changed, then copy the backup back from `SYS:Storage/kde2amiga-backup/SYS/Prefs`.
       Expected: the original icon returns, tooltypes intact — check with Icons/Information.
-- [ ] **4. WBStartup survives a boot, for more than one icon.** All nine WBStartup targets
-      carry `DONOTWAIT`, and a regression in any one of them passes unnoticed if only one
-      is ever checked, so every WBStartup icon in the archive must be checked before
-      release — install at least two (for example `DefIcons` and `RexxMast`) alongside
-      each other, then reboot. Expected: the machine reaches Workbench and both replaced
-      programs still run. If `DONOTWAIT` was lost on any one of them, Workbench's startup
-      sequence stalls on that item and every WBStartup program listed after it never
-      launches; hold both mouse buttons at boot to skip WBStartup and restore that icon
-      from the backup.
+      Then do it again without restoring in between: install, install a second time
+      (another theme, or the same archive), and only then restore. Expected: the *stock*
+      icon comes back, not the one the first run installed. The backup copy is guarded on
+      the backup not already existing precisely because `copyfiles` overwrites in silence,
+      and a second run that backed up our own icon over the original would leave the stock
+      icon nowhere on the machine.
+- [ ] **3a. Replaced icons need re-arranging.** Nothing in the archive can carry an icon's
+      saved position or a drawer's window geometry across a replacement, so both are lost.
+      Install several `SYS:Prefs` targets at once. Expected: the confirmation page says so
+      before anything is overwritten, the drawer opens with the icons unpositioned, and
+      Icons/Snapshot makes an arrangement stick.
+- [ ] **4. WBStartup survives a boot, for more than one icon.** All six WBStartup targets
+      carry `DONOTWAIT`; nine targets in all carry it, the other three being
+      `SYS:System/Mounter`, `SYS:System/RexxMast` and `SYS:Utilities/Clock`. A regression
+      in any one of them passes unnoticed if only one is ever checked, so all nine must be
+      checked before release — install at least two WBStartup icons (for example
+      `DefIcons` and `AsyncWB`) alongside each other, then reboot. Expected: the machine
+      reaches Workbench and both replaced programs still run. `Mounter` and `RexxMast` are
+      startup-relevant too and need the same check even though they sit outside WBStartup:
+      whatever launches them stalls the same way if `DONOTWAIT` was lost. `Clock` is the
+      cheap one — replace it, reboot, and confirm it appears without blocking. If
+      `DONOTWAIT` was lost on any one of them, Workbench's startup sequence stalls on
+      that item and every WBStartup program listed after it never launches; hold both
+      mouse buttons at boot to skip WBStartup and restore that icon from the backup.
 - [ ] **5. Shell still opens.** Install `SYS:System/Shell`, double-click it. Expected: a
       shell window titled AmigaShell, sized as before. A window that opens and closes, or
       does not open, means the default tool or `WINDOW=` was lost.

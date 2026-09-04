@@ -11,7 +11,7 @@ import type { IconKind } from '../newicons/diskObject';
 export interface WorkbenchTarget {
   /** The assign this branch hangs off, colon included. */
   root: string;
-  /** Path below the root; '' would mean the root drawer itself. */
+  /** Path below the root, or '' for a file sitting in the root drawer itself. */
   drawer: string;
   /** The file whose `.info` is replaced, without the suffix. */
   name: string;
@@ -45,7 +45,14 @@ export interface WorkbenchTarget {
 export type WorkbenchTargetPath = string;
 
 export function targetPath(target: WorkbenchTarget): WorkbenchTargetPath {
-  return `${target.root}${target.drawer}/${target.name}`;
+  // The separator belongs to the drawer, not to the name: a root-drawer target is
+  // `SYS:Name`, and `SYS:/Name` is a different place on AmigaDOS — the parent of SYS:.
+  return `${target.root}${target.drawer}${target.drawer ? '/' : ''}${target.name}`;
+}
+
+/** The Amiga drawer a replacement is copied into: `SYS:Prefs`, or `SYS:` for the root. */
+export function targetDestination(target: WorkbenchTarget): string {
+  return `${target.root}${target.drawer}`;
 }
 
 /**
@@ -57,11 +64,24 @@ export function targetPath(target: WorkbenchTarget): WorkbenchTargetPath {
  */
 export const WB_DRAWER = 'Wb';
 
-/** The drawer inside the archive holding this target's replacement icon. */
-export function archiveDrawerFor(target: WorkbenchTarget): string {
+/**
+ * The drawer levels below `Wb/` that mirror this target's place on the machine:
+ * `['SYS', 'Prefs']`, or `['SYS']` for a target sitting in the root drawer.
+ *
+ * Split into levels rather than joined because both callers need the levels: the layout
+ * joins them into a path, and the installer script has to `makedir` the backup branch one
+ * level at a time.
+ */
+export function archiveBranchFor(target: WorkbenchTarget): string[] {
   // The colon is illegal in zip and LHA paths on most hosts, so the root loses it here
   // and the generated Installer script puts it back.
-  return `${WB_DRAWER}/${target.root.replace(':', '')}/${target.drawer}`;
+  const root = target.root.replace(':', '');
+  return target.drawer === '' ? [root] : [root, ...target.drawer.split('/')];
+}
+
+/** The drawer inside the archive holding this target's replacement icon. */
+export function archiveDrawerFor(target: WorkbenchTarget): string {
+  return [WB_DRAWER, ...archiveBranchFor(target)].join('/');
 }
 
 /**

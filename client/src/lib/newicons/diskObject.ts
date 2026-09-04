@@ -93,6 +93,11 @@ export function buildInfoFile(params: {
   w.writeUByte(0); // padding
   w.writeDWord(defaultTool === undefined ? 0 : 1); // hasDefaultTool
   w.writeDWord(1); // hasToolTypes
+  // NO_ICON_POSITION for both, so Workbench places the icon itself rather than dropping
+  // it on a coordinate we invented. A replacement therefore arrives unpositioned: the
+  // originals' coordinates live in the icon being overwritten and nothing here can read
+  // them, so the installer's confirmation page and the archive README both say that a
+  // replaced drawer needs re-arranging and Snapshotting.
   w.writeLong(128 << 24); // currentX
   w.writeLong(128 << 24); // currentY
   w.writeDWord(isDrawerLike ? 1 : 0); // hasDrawerData

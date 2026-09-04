@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   WORKBENCH_TARGETS,
+  archiveBranchFor,
   archiveDrawerFor,
+  targetDestination,
   targetForPath,
   targetPath,
   targetsByDrawer,
+  type WorkbenchTarget,
 } from './workbenchTargets';
 
 describe('WORKBENCH_TARGETS', () => {
@@ -81,6 +84,32 @@ describe('WORKBENCH_TARGETS', () => {
 
   it('maps a target to the drawer it occupies inside the archive', () => {
     expect(archiveDrawerFor(targetForPath('SYS:Prefs/Font'))).toBe('Wb/SYS/Prefs');
+  });
+
+  it('names the Amiga drawer a replacement is copied into', () => {
+    expect(targetDestination(targetForPath('SYS:Prefs/Font'))).toBe('SYS:Prefs');
+  });
+
+  /**
+   * `drawer: ''` is what the interface offers for a target sitting in the root drawer,
+   * and nothing in the catalogue uses it yet — so it was quietly broken everywhere:
+   * `SYS:/Name` for the path, a trailing slash on the archive drawer, and a `makedir` of
+   * the empty string in the generated script. A promise the interface makes is either
+   * kept or withdrawn.
+   */
+  it('handles a target in a root drawer, which the interface says is allowed', () => {
+    const target: WorkbenchTarget = {
+      root: 'SYS:',
+      drawer: '',
+      name: 'Disk',
+      kind: 'project',
+      description: 'The volume icon itself',
+    };
+
+    expect(targetPath(target)).toBe('SYS:Disk');
+    expect(targetDestination(target)).toBe('SYS:');
+    expect(archiveBranchFor(target)).toEqual(['SYS']);
+    expect(archiveDrawerFor(target)).toBe('Wb/SYS');
   });
 
   it('groups selected paths by archive drawer, in catalogue order', () => {

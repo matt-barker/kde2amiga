@@ -51,6 +51,82 @@ describe('buildInstallerScript', () => {
   });
 
   /**
+   * The whole safety property, and the one that was silently false: `copyfiles`
+   * overwrites without asking, so a backup taken whenever the destination exists means
+   * the second install copies the *first* install's icon over the stock original. The
+   * user's real icons are then gone from the machine, with a backup drawer that still
+   * looks full. Anyone re-running to add a drawer, retrying after an abort, or trying a
+   * second theme hits it.
+   */
+  it('never overwrites a backup it already took, so a second run keeps the originals', () => {
+    const lines = script(['SYS:Prefs/Font']).split('\n').map((line) => line.trim());
+
+    const at = lines.findIndex((line) => line.startsWith('(foreach "Wb/SYS/Prefs"'));
+    expect(at).toBeGreaterThan(-1);
+    expect(lines[at + 1]).toBe('(if (AND (exists (tackon "SYS:Prefs" @each-name))');
+    expect(lines[at + 2]).toBe('(NOT (exists (tackon #here @each-name))))');
+    expect(lines[at + 3]).toBe(
+      '(copyfiles (source (tackon "SYS:Prefs" @each-name)) (dest #here))))',
+    );
+  });
+
+  /**
+   * Spec §6: "A confirmation page lists the drawers about to change and names any
+   * machineSpecific target among them." Without it the user answers an askdir and then
+   * watches twenty icons get overwritten with no statement of what was about to happen.
+   */
+  it('lists the drawers about to change, before anything is copied', () => {
+    const text = script(['SYS:Prefs/Font', 'SYS:Prefs/Asl', 'SYS:WBStartup/DefIcons']);
+
+    expect(text).toContain('(message "These Workbench drawers are about to change:');
+    expect(text).toContain('"  SYS:Prefs  (2 icons)\\n"');
+    expect(text).toContain('"  SYS:WBStartup  (1 icon)\\n"');
+    expect(text).not.toContain('SYS:Tools  (');
+
+    const page = text.indexOf('These Workbench drawers are about to change');
+    expect(page).toBeLessThan(text.indexOf('(askdir'));
+    expect(page).toBeLessThan(text.indexOf('(copyfiles (source "Wb/'));
+  });
+
+  /**
+   * The Installer cannot read the original icon's coordinates out of the file it is
+   * about to overwrite, so this cannot be fixed — only said out loud. A user who
+   * replaces a whole Prefs drawer and finds it scrambled has no other way to learn that
+   * it was expected, or that Snapshot is the fix.
+   */
+  it('warns on that page that positions and window geometry are lost', () => {
+    const text = script(['SYS:Prefs/Font']);
+
+    expect(text).toContain('lose their positions in the drawer');
+    expect(text).toContain('window size and position');
+    expect(text).toContain('Icons/Snapshot');
+  });
+
+  /**
+   * Folded into the confirmation page rather than emitted beside it: two requesters back
+   * to back read as two questions, and the second one arrives after the user has already
+   * agreed to proceed.
+   */
+  it('names a machine-specific target on that same page, not in a second message', () => {
+    const text = script(['SYS:Tools/HDToolBox']);
+
+    expect(text.match(/\(message /g)).toHaveLength(1);
+    expect(text).toContain('"  HDToolBox\\n\\n"');
+  });
+
+  /**
+   * The destination is what the catalogue states, not what is left after slicing `Wb/`
+   * off an archive path. Re-deriving it gave one string two owners, and got it wrong for
+   * a target in a root drawer.
+   */
+  it('reads each destination off the catalogue rather than off the archive path', () => {
+    const text = script(['SYS:Utilities/Clock']);
+
+    expect(text).toContain('(copyfiles (source "Wb/SYS/Utilities") (dest "SYS:Utilities")');
+    expect(text).not.toContain('SYS:Utilities/');
+  });
+
+  /**
    * Neither `MakeDir` nor Installer's `makedir` is documented to create intermediate
    * drawers, and the backup branch is two levels below the drawer the user picked. One
    * call for the whole branch would abort the install with the original already gone.
@@ -105,6 +181,45 @@ describe('buildInstallerScript', () => {
   it('warns about a machine-specific target only when one is being installed', () => {
     expect(script(['SYS:Tools/HDToolBox'])).toContain('HDToolBox');
     expect(script(['SYS:Prefs/Font'])).not.toContain('HDToolBox');
+  });
+
+  /**
+   * IconX and the Installer both set the current directory to the drawer holding the
+   * script, so a relative source works wherever the archive was unpacked and an absolute
+   * one only works for the drawer we happened to guess. This regression shows up nowhere
+   * but on hardware, as an installer that copies nothing and reports success.
+   *
+   * Quoted literals only: the backup step's `(source (tackon "SYS:Prefs" @each-name))` is
+   * reading the machine, not the archive, and is absolute on purpose.
+   */
+  it('names its copy sources relative to the drawer the script sits in', () => {
+    const text = script(['SYS:Prefs/Font', 'SYS:WBStartup/DefIcons']);
+    const sources = [...text.matchAll(/\(source "([^"]+)"\)/g)].map((m) => m[1]);
+
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) expect(source).not.toContain(':');
+  });
+
+  /**
+   * `ENVARC:Sys` and `ENV:Sys` do not exist on a machine that has never had a def_ icon
+   * installed, and `copyfiles` into an absent drawer is an error, not a mkdir.
+   */
+  it('creates the destination drawers rather than assuming they exist', () => {
+    const text = script([]);
+
+    for (const drawer of ['ENVARC:Sys', 'ENV:Sys']) {
+      const made = text.indexOf(`(makedir "${drawer}")`);
+      expect(made).toBeGreaterThan(-1);
+      expect(made).toBeLessThan(text.indexOf(`(dest "${drawer}")`));
+    }
+  });
+
+  /**
+   * Icons already drawn on screen keep their old look until Workbench redraws them, so a
+   * user who installs and sees nothing change concludes it failed.
+   */
+  it('tells the user the change is not fully visible until a reboot', () => {
+    expect(script(['SYS:Prefs/Font'])).toMatch(/reboot/i);
   });
 
   /**
