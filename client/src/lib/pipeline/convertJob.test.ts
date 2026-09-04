@@ -25,7 +25,7 @@ describe('runConversionJob', () => {
         { icon: folderIcon, kind: 'drawer', role: 'drawer' },
         { icon: firefoxIcon, kind: 'tool' },
       ],
-      { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' },
+      { outputSizePx: 32, maxColors: 16, selectedEffect: 'darken' },
     );
 
     // The job stops at converted icons now; turning those into archive paths belongs to
@@ -33,7 +33,8 @@ describe('runConversionJob', () => {
     expect(converted.map((icon) => icon.name)).toEqual(['folder', 'firefox']);
     expect(converted.find((icon) => icon.name === 'folder')?.role).toBe('drawer');
     expect(converted.find((icon) => icon.name === 'firefox')?.role).toBeUndefined();
-    expect(converted.every((icon) => icon.infoBytes.length > 0)).toBe(true);
+    expect(converted.find((icon) => icon.name === 'folder')?.kind).toBe('drawer');
+    expect(converted.every((icon) => icon.normal.pixels.length > 0)).toBe(true);
   });
 
   it('skips an icon that fails to decode without aborting the batch', async () => {
@@ -48,7 +49,7 @@ describe('runConversionJob', () => {
     const converted = await runConversionJob(
       zip,
       [{ icon: brokenIcon, kind: 'tool' }, { icon: okIcon, kind: 'tool' }],
-      { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' },
+      { outputSizePx: 32, maxColors: 16, selectedEffect: 'darken' },
       (done, total) => progressLog.push([done, total]),
     );
 
@@ -58,12 +59,13 @@ describe('runConversionJob', () => {
 
   it('exposes per-icon decode and preparation for previews', async () => {
     const zip = new JSZip();
-    // Red and its own inverse, cyan. selectedState.ts's nearestPaletteIndex reserves
-    // index 0 for transparency and never remaps a foreground pixel onto it, so a
-    // palette holding one foreground colour would leave invert with nowhere to go and
-    // the assertion below vacuous. Palettes are per icon now, so the fixture has to
-    // carry both colours rather than the test injecting them.
-    zip.file('t/32/apps/a.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="16" fill="#ff0000"/><rect y="16" width="32" height="16" fill="#00ffff"/></svg>');
+    // Two greys exactly 60 apart, which is the step `darken` takes. selectedState.ts's
+    // nearestPaletteIndex reserves index 0 for transparency and never remaps a foreground
+    // pixel onto it, so a palette holding one foreground colour — or two further apart
+    // than the effect can travel — would leave the assertion below vacuous. Palettes are
+    // per icon now, so the fixture has to carry both colours rather than the test
+    // injecting them.
+    zip.file('t/32/apps/a.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="16" fill="#a0a0a0"/><rect y="16" width="32" height="16" fill="#646464"/></svg>');
 
     const image = await decodeThemeIcon(
       zip,
@@ -74,18 +76,18 @@ describe('runConversionJob', () => {
     expect(image.height).toBe(32);
 
     const { normal, selected } = prepareIcon(image, {
-      outputSizePx: 32, maxColors: 8, selectedEffect: 'invert',
+      outputSizePx: 32, maxColors: 8, selectedEffect: 'darken',
     });
 
     expect(normal).toHaveLength(32 * 32);
     expect(selected).toHaveLength(32 * 32);
-    expect(selected).not.toEqual(normal); // invert must actually change something
+    expect(selected).not.toEqual(normal); // the effect must actually change something
   });
 
   it('builds the palette from the one icon it is given', () => {
     // Batch-wide palettes are what the 34-entry ceiling made so costly.
     const red = solid(4, 4, [255, 0, 0, 255]);
-    const { palette } = prepareIcon(red, { outputSizePx: 4, maxColors: 8, selectedEffect: 'invert' });
+    const { palette } = prepareIcon(red, { outputSizePx: 4, maxColors: 8, selectedEffect: 'darken' });
     expect(palette[0]).toEqual([0, 0, 0]); // reserved transparent slot
     for (const entry of palette.slice(1)) expect(entry).toEqual([255, 0, 0]);
   });
@@ -95,7 +97,7 @@ describe('runConversionJob', () => {
     // the fringe against the backdrop the icon will sit on.
     const image = solid(1, 1, [0, 0, 0, 128]);
     const { palette, normal } = prepareIcon(image, {
-      outputSizePx: 1, maxColors: 8, selectedEffect: 'invert', backgroundColor: [0xab, 0xab, 0xab],
+      outputSizePx: 1, maxColors: 8, selectedEffect: 'darken', backgroundColor: [0xab, 0xab, 0xab],
     });
     expect(normal[0]).not.toBe(0); // drawn, not dropped
     expect(palette[normal[0]]).toEqual([85, 85, 85]); // blended halfway to the grey
@@ -104,7 +106,7 @@ describe('runConversionJob', () => {
   it('leaves the edge hard when no background is configured', () => {
     const image = solid(1, 1, [0, 0, 0, 128]);
     const { palette, normal } = prepareIcon(image, {
-      outputSizePx: 1, maxColors: 8, selectedEffect: 'invert',
+      outputSizePx: 1, maxColors: 8, selectedEffect: 'darken',
     });
     expect(palette[normal[0]]).toEqual([0, 0, 0]); // the source colour, unblended
   });
@@ -156,7 +158,7 @@ describe('glow surround colour', () => {
 
   it('reserves nothing when the effect is not glow surround', () => {
     const { palette } = prepareIcon(dotOnTransparent(), {
-      outputSizePx: 3, maxColors: 8, selectedEffect: 'invert', glowColor: [0, 255, 0],
+      outputSizePx: 3, maxColors: 8, selectedEffect: 'darken', glowColor: [0, 255, 0],
     });
     expect(palette).not.toContainEqual([0, 255, 0]);
   });
@@ -180,6 +182,6 @@ describe('glowMarginPx', () => {
   it('reserves nothing when no halo is being drawn', () => {
     // Every other effect recolours pixels in place, so taking room from the artwork
     // would shrink icons for nothing.
-    expect(glowMarginPx({ ...base, selectedEffect: 'invert' })).toBe(0);
+    expect(glowMarginPx({ ...base, selectedEffect: 'darken' })).toBe(0);
   });
 });

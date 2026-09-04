@@ -17,6 +17,7 @@ import { buildOutputZip } from './zipBuilder';
 import { ARCHIVE_BASE_NAME } from './outputEntries';
 import { buildOutputLha } from './lhaBuilder';
 import type { ConvertedIcon } from './outputEntries';
+import type { NewIconState } from '../newicons/newIconsEncoder';
 
 /**
  * Pins the promise the two download buttons make: whichever one the user picks, they get
@@ -28,10 +29,43 @@ import type { ConvertedIcon } from './outputEntries';
  */
 const LHA = '/usr/bin/lha';
 
+function state(size: number, fill: number): NewIconState {
+  return {
+    width: size,
+    height: size,
+    transparent: true,
+    palette: [[0, 0, 0], [255, 255, 255]],
+    pixels: new Array(size * size).fill(fill),
+  };
+}
+
 const ICONS: ConvertedIcon[] = [
-  { name: 'folder', infoBytes: Uint8Array.from({ length: 900 }, (_, i) => (i * 7) & 0xff), role: 'drawer' },
-  { name: 'firefox', infoBytes: Uint8Array.from({ length: 1500 }, (_, i) => (i % 17) & 0xff) },
-  { name: 'trash', infoBytes: Uint8Array.from({ length: 400 }, () => 0x41), role: 'trashcan' },
+  {
+    name: 'folder',
+    width: 24,
+    height: 24,
+    kind: 'drawer',
+    normal: state(24, 0),
+    selected: state(24, 1),
+    role: 'drawer',
+  },
+  {
+    name: 'firefox',
+    width: 32,
+    height: 32,
+    kind: 'tool',
+    normal: state(32, 1),
+    selected: state(32, 0),
+  },
+  {
+    name: 'trash',
+    width: 16,
+    height: 16,
+    kind: 'trashcan',
+    normal: state(16, 0),
+    selected: state(16, 0),
+    role: 'trashcan',
+  },
 ];
 
 async function unpackZip(icons: ConvertedIcon[]): Promise<Map<string, Uint8Array>> {

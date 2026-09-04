@@ -3,7 +3,38 @@ import { buildOutputEntries, ARCHIVE_BASE_NAME } from './outputEntries';
 import { INSTALLER_SCRIPT_NAME, INSTALLER_DEFAULT_TOOL } from './installerScript';
 import { decodeInfoFileForTest } from '../newicons/diskObjectDecoderForTest';
 
+import type { NewIconState } from '../newicons/newIconsEncoder';
+import type { ConvertedIcon } from './outputEntries';
+
 const textOf = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+/**
+ * A minimal icon in the shape `buildOutputEntries` now takes. The states matter only
+ * in that they decode; every assertion here is about which type byte and metadata each
+ * destination gets, not about pixels.
+ */
+function state(): NewIconState {
+  return {
+    width: 2,
+    height: 2,
+    transparent: true,
+    palette: [[0, 0, 0], [255, 255, 255]],
+    pixels: [0, 1, 1, 0],
+  };
+}
+
+function icon(overrides: Partial<ConvertedIcon> = {}): ConvertedIcon {
+  return {
+    name: 'folder',
+    width: 2,
+    height: 2,
+    kind: 'drawer',
+    normal: state(),
+    selected: state(),
+    ...overrides,
+  };
+}
+
 const pathsOf = (
   icons: Parameters<typeof buildOutputEntries>[0],
   rootName?: string,
@@ -18,8 +49,8 @@ describe('buildOutputEntries', () => {
   it('places every icon as <name>.info inside the archive drawer', () => {
     expect(
       pathsOf([
-        { name: 'folder', infoBytes: new Uint8Array([1]) },
-        { name: 'firefox', infoBytes: new Uint8Array([2]) },
+        icon({ name: 'folder' }),
+        icon({ name: 'firefox' }),
       ]),
     ).toEqual(
       expect.arrayContaining([
@@ -30,7 +61,7 @@ describe('buildOutputEntries', () => {
   });
 
   it('additionally places a role-tagged icon under Sys/def_<role>.info', () => {
-    const paths = pathsOf([{ name: 'folder', infoBytes: new Uint8Array([1]), role: 'drawer' }]);
+    const paths = pathsOf([icon({ role: 'drawer' })]);
     expect(paths).toEqual(
       expect.arrayContaining([
         `${ARCHIVE_BASE_NAME}/folder.info`,
@@ -39,13 +70,39 @@ describe('buildOutputEntries', () => {
     );
   });
 
-  it('gives the role copy the same bytes as the icon it came from', () => {
-    const infoBytes = new Uint8Array([9, 8, 7]);
-    const entries = buildOutputEntries([{ name: 'folder', infoBytes, role: 'trashcan' }]);
-    const role = entries.find(
-      (entry) => entry.path === `${ARCHIVE_BASE_NAME}/Sys/def_trashcan.info`,
+  /**
+   * The standalone icon and the def_ copy no longer share bytes, and must not: DefIcons
+   * applies the slot icon's type to the file it matches, so a tool-typed def_picture
+   * would have Workbench try to *execute* every picture on the machine.
+   */
+  it('stamps each destination with its own type byte', () => {
+    const entries = buildOutputEntries([icon({ kind: 'drawer', role: 'picture' })]);
+
+    const standalone = entries.find((e) => e.path.endsWith('/folder.info'));
+    const slot = entries.find((e) => e.path.endsWith('/Sys/def_picture.info'));
+
+    expect(decodeInfoFileForTest(standalone!.bytes).type).toBe(2); // drawer
+    expect(decodeInfoFileForTest(slot!.bytes).type).toBe(4); // project, per the slot
+  });
+
+  it('gives a type-fallback slot the type its own name demands', () => {
+    const entries = buildOutputEntries([icon({ kind: 'project', role: 'trashcan' })]);
+    const slot = entries.find((e) => e.path.endsWith('/Sys/def_trashcan.info'));
+
+    expect(decodeInfoFileForTest(slot!.bytes).type).toBe(5);
+  });
+
+  it('draws the same picture into every destination', () => {
+    const entries = buildOutputEntries([icon({ role: 'drawer' })]);
+    const standalone = decodeInfoFileForTest(
+      entries.find((e) => e.path.endsWith('/folder.info'))!.bytes,
     );
-    expect(role?.bytes).toEqual(infoBytes);
+    const slot = decodeInfoFileForTest(
+      entries.find((e) => e.path.endsWith('/Sys/def_drawer.info'))!.bytes,
+    );
+
+    expect(slot.normal.pixels).toEqual(standalone.normal.pixels);
+    expect(slot.selected.pixels).toEqual(standalone.selected.pixels);
   });
 
   const readmeFor = (icons: Parameters<typeof buildOutputEntries>[0]) =>
@@ -55,7 +112,7 @@ describe('buildOutputEntries', () => {
     );
 
   it('includes a README explaining how to install the Sys/ contents', () => {
-    const readme = readmeFor([{ name: 'folder', infoBytes: new Uint8Array([1]), role: 'drawer' }]);
+    const readme = readmeFor([icon({ role: 'drawer' })]);
     expect(readme).toMatch(/ENVARC:Sys/);
     expect(readme).toMatch(/ENV:Sys/);
   });
@@ -65,7 +122,7 @@ describe('buildOutputEntries', () => {
    * one describe a file the user cannot find and cast doubt on the rest of the README.
    */
   it('leaves the Sys/ instructions out when there is no Sys/ drawer', () => {
-    const readme = readmeFor([{ name: 'folder', infoBytes: new Uint8Array([1]) }]);
+    const readme = readmeFor([icon()]);
     expect(readme).not.toMatch(/ENVARC:Sys/);
     expect(readme).toMatch(/\.info/);
   });
@@ -75,13 +132,13 @@ describe('buildOutputEntries', () => {
   });
 
   it('writes the def_ copy under the slot name, not the icon kind, for a DefIcons slot', () => {
-    expect(pathsOf([{ name: 'gwenview', infoBytes: new Uint8Array([1]), role: 'picture' }])).toEqual(
+    expect(pathsOf([icon({ name: 'gwenview', role: 'picture' })])).toEqual(
       expect.arrayContaining([`${ARCHIVE_BASE_NAME}/Sys/def_picture.info`]),
     );
   });
 
   it('keeps the exact casing of a slot that shipped capitalised', () => {
-    expect(pathsOf([{ name: 'ram', infoBytes: new Uint8Array([1]), role: 'RAM' }])).toEqual(
+    expect(pathsOf([icon({ name: 'ram', role: 'RAM' })])).toEqual(
       expect.arrayContaining([`${ARCHIVE_BASE_NAME}/Sys/def_RAM.info`]),
     );
   });
@@ -94,8 +151,8 @@ describe('buildOutputEntries', () => {
    */
   it('puts every single entry inside the drawer, with nothing loose at the root', () => {
     const paths = pathsOf([
-      { name: 'folder', infoBytes: new Uint8Array([1]), role: 'drawer' },
-      { name: 'trash', infoBytes: new Uint8Array([2]), role: 'trashcan' },
+      icon({ name: 'folder', role: 'drawer' }),
+      icon({ name: 'trash', role: 'trashcan' }),
     ]);
     expect(paths.length).toBeGreaterThan(0);
     for (const path of paths) expect(path.startsWith(`${ARCHIVE_BASE_NAME}/`)).toBe(true);
@@ -106,13 +163,13 @@ describe('buildOutputEntries', () => {
    * the download renames the drawer with it and the two can never disagree.
    */
   it('names the drawer after whatever the archive is called', () => {
-    expect(pathsOf([{ name: 'folder', infoBytes: new Uint8Array([1]) }], 'amiga-goodies')).toEqual(
+    expect(pathsOf([icon()], 'amiga-goodies')).toEqual(
       expect.arrayContaining(['amiga-goodies/folder.info', 'amiga-goodies/README.txt']),
     );
   });
 
   it('leaves no entry outside a renamed drawer either', () => {
-    for (const path of pathsOf([{ name: 'f', infoBytes: new Uint8Array([1]), role: 'disk' }], 'x')) {
+    for (const path of pathsOf([icon({ name: 'f', role: 'disk' })], 'x')) {
       expect(path.startsWith('x/')).toBe(true);
     }
   });
@@ -123,7 +180,7 @@ describe('buildOutputEntries', () => {
  * commands into a Shell on a machine with no clipboard from the desktop.
  */
 describe('the Install Default Icons installer', () => {
-  const withRole = [{ name: 'folder', infoBytes: new Uint8Array([1]), role: 'drawer' as const }];
+  const withRole = [icon({ role: 'drawer' })];
 
   it('ships the script and its icon beside the Sys drawer', () => {
     const paths = pathsOf(withRole);
@@ -154,7 +211,7 @@ describe('the Install Default Icons installer', () => {
    * If no icon claims a slot there is no Sys drawer at all, so the installer goes too.
    */
   it('is left out entirely when no icon claims a default slot', () => {
-    const paths = pathsOf([{ name: 'folder', infoBytes: new Uint8Array([1]) }]);
+    const paths = pathsOf([icon()]);
     expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}`);
     expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}.info`);
   });

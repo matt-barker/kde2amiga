@@ -3,16 +3,17 @@ import JSZip from 'jszip';
 import { buildPreviews } from './preview';
 import { runConversionJob } from './convertJob';
 import { decodeInfoFileForTest } from '../newicons/diskObjectDecoderForTest';
+import { buildInfoFile } from '../newicons/diskObject';
 import type { IconVariant } from '../theme/themeParser';
 
 const RED_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#ff0000"/></svg>';
 
 // Index 0 in any palette is reserved for transparency. A solid single-colour icon
-// therefore quantizes to exactly one foreground palette slot, and no selected-state
-// effect can produce a visible difference when there's nowhere else to remap to
-// (see task-9's note on this). This icon carries two foreground colours so `invert`
-// has a second palette slot to snap onto.
+// therefore quantizes to exactly one foreground palette slot, and a recolouring
+// selected-state effect can produce no visible difference when there's nowhere else to
+// remap to (see task-9's note on this). This icon carries two foreground colours, so it
+// stays a fair fixture whichever effect is asked for.
 const TWO_COLOR_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
   '<rect width="32" height="32" fill="#ff0000"/>' +
@@ -29,7 +30,7 @@ describe('buildPreviews', () => {
     zip.file('t/32/apps/a.svg', TWO_COLOR_SVG);
 
     const previews = await buildPreviews(zip, [variant('a')], {
-      outputSizePx: 32, maxColors: 8, selectedEffect: 'invert',
+      outputSizePx: 32, maxColors: 8, selectedEffect: 'glowSurround',
     });
 
     expect(previews).toHaveLength(1);
@@ -48,10 +49,10 @@ describe('buildPreviews', () => {
     );
 
     const [together] = await buildPreviews(zip, [variant('a'), variant('b')], {
-      outputSizePx: 32, maxColors: 2, selectedEffect: 'invert',
+      outputSizePx: 32, maxColors: 2, selectedEffect: 'darken',
     });
     const [alone] = await buildPreviews(zip, [variant('a')], {
-      outputSizePx: 32, maxColors: 2, selectedEffect: 'invert',
+      outputSizePx: 32, maxColors: 2, selectedEffect: 'darken',
     });
 
     // A NewIcons .info carries its own palette, so sharing one across the batch was
@@ -67,7 +68,7 @@ describe('buildPreviews', () => {
     zip.file('t/32/apps/a.svg', RED_SVG);
 
     const previews = await buildPreviews(zip, [variant('a'), variant('missing')], {
-      outputSizePx: 32, maxColors: 8, selectedEffect: 'invert',
+      outputSizePx: 32, maxColors: 8, selectedEffect: 'darken',
     });
 
     expect(previews.map((p) => p.zipPath)).toEqual(['t/32/apps/a.svg']);
@@ -132,7 +133,7 @@ describe('preview / conversion pixel identity', () => {
     zip.file('t/32/apps/a.svg', THREE_COLOR_SVG);
     zip.file('t/32/apps/b.svg', OTHER_SVG);
 
-    const config = { outputSizePx: 32, maxColors: 8, selectedEffect: 'invert' as const };
+    const config = { outputSizePx: 32, maxColors: 8, selectedEffect: 'glowSurround' as const };
     const variants = [variant('a'), variant('b')];
 
     const previews = await buildPreviews(zip, variants, config);
@@ -147,15 +148,23 @@ describe('preview / conversion pixel identity', () => {
     for (const v of variants) {
       const entry = converted.find((icon) => icon.name === v.name);
       expect(entry).toBeDefined();
-      const decoded = decodeInfoFileForTest(entry!.infoBytes);
+      const decoded = decodeInfoFileForTest(
+        buildInfoFile({
+          width: entry!.width,
+          height: entry!.height,
+          kind: entry!.kind,
+          normal: entry!.normal,
+          selected: entry!.selected,
+        }),
+      );
       const preview = previews.find((p) => p.zipPath === v.zipPath)!;
 
       expect([decoded.width, decoded.height]).toEqual([preview.width, preview.height]);
       // Both states of one icon must share one palette, and it must be the batch palette.
       expect(decoded.selected.palette).toEqual(decoded.normal.palette);
       // Guard against a vacuous comparison: index 0 is reserved for transparency, so a
-      // palette with fewer than three entries leaves `invert` only one foreground slot to
-      // land on and normal/selected could not differ however wrong the code was.
+      // palette with fewer than three entries leaves the effect only one foreground slot
+      // to land on and normal/selected could not differ however wrong the code was.
       expect(decoded.normal.palette.length).toBeGreaterThanOrEqual(3);
 
       expect(Array.from(preview.normal.data)).toEqual(

@@ -11,7 +11,7 @@ import {
   glowRamp,
   type SelectedStateEffect,
 } from '../image/selectedState';
-import { buildInfoFile, type IconKind } from '../newicons/diskObject';
+import type { IconKind } from '../newicons/diskObject';
 import type { ConvertedIcon } from '../output/outputEntries';
 
 export interface JobIconInput {
@@ -64,7 +64,7 @@ export const DEFAULT_JOB_CONFIG: JobConfig = {
    */
   outputSizePx: 48,
   maxColors: 16,
-  selectedEffect: 'invert',
+  selectedEffect: 'glowSurround',
   // The standard Workbench grey. Smoothing edges against it is on by default because
   // it is what the OS's own GlowIcons assume; it can be switched off for other backdrops.
   backgroundColor: [0xab, 0xab, 0xab],
@@ -192,15 +192,15 @@ export async function runConversionJob(
   const convertedIcons: ConvertedIcon[] = decoded.map(({ input, image }) => {
     const { palette, normal, selected, width, height } = prepareIcon(image, config);
 
-    const infoBytes = buildInfoFile({
+    return {
+      name: input.icon.name,
       width,
       height,
       kind: input.kind,
       normal: { width, height, transparent: true, palette, pixels: normal },
       selected: { width, height, transparent: true, palette, pixels: selected },
-    });
-
-    return { name: input.icon.name, infoBytes, role: input.role };
+      role: input.role,
+    };
   });
 
   return convertedIcons;

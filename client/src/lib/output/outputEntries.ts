@@ -4,12 +4,28 @@ import {
   INSTALLER_SCRIPT_NAME,
   SYS_DRAWER,
 } from './installerScript';
+import { buildInfoFile, type IconKind } from '../newicons/diskObject';
+import type { NewIconState } from '../newicons/newIconsEncoder';
+import { slotForRole, type DefaultIconRole } from './defaultIconSlots';
 
-import type { DefaultIconRole } from './defaultIconSlots';
-
+/**
+ * One converted icon, as image states rather than as a finished `.info`.
+ *
+ * It used to carry finished bytes, which meant every destination got the same type byte.
+ * That held while there were two destinations that happened to agree; it stopped holding
+ * the moment an icon could be both `def_picture` (a project icon, by DefIcons' rules) and
+ * `SYS:Prefs/Font` (a tool, because Workbench must *run* what it names). Carrying states
+ * lets each destination stamp its own type byte and its own metadata, and costs one extra
+ * `buildInfoFile` call — nothing next to rasterising and quantising the icon.
+ */
 export interface ConvertedIcon {
   name: string;
-  infoBytes: Uint8Array;
+  width: number;
+  height: number;
+  /** The type byte for the standalone `<name>.info` only. */
+  kind: IconKind;
+  normal: NewIconState;
+  selected: NewIconState;
   role?: DefaultIconRole;
 }
 
@@ -74,6 +90,28 @@ function encodeLatin1(text: string): Uint8Array {
 }
 
 /**
+ * Builds one destination's `.info` from an icon's states.
+ *
+ * Every `.info` the archive contains goes through here, so there is exactly one place
+ * that decides what a destination's type byte and metadata are.
+ */
+function infoFor(
+  icon: ConvertedIcon,
+  kind: IconKind,
+  metadata: { defaultTool?: string; toolTypes?: readonly string[] } = {},
+): Uint8Array {
+  return buildInfoFile({
+    width: icon.width,
+    height: icon.height,
+    kind,
+    normal: icon.normal,
+    selected: icon.selected,
+    defaultTool: metadata.defaultTool,
+    toolTypes: metadata.toolTypes,
+  });
+}
+
+/**
  * The file layout of an output archive, independent of how it gets packed.
  *
  * Everything is nested in a single drawer named for the archive. `lha x` and most unzip
@@ -92,9 +130,12 @@ export function buildOutputEntries(
   const at = (path: string) => `${rootName}/${path}`;
 
   for (const icon of icons) {
-    entries.push({ path: at(`${icon.name}.info`), bytes: icon.infoBytes });
+    entries.push({ path: at(`${icon.name}.info`), bytes: infoFor(icon, icon.kind) });
     if (icon.role) {
-      entries.push({ path: at(`${SYS_DRAWER}/def_${icon.role}.info`), bytes: icon.infoBytes });
+      entries.push({
+        path: at(`${SYS_DRAWER}/def_${icon.role}.info`),
+        bytes: infoFor(icon, slotForRole(icon.role).kind),
+      });
     }
   }
 
