@@ -1,0 +1,6 @@
+AssignWedge.info
+AsyncWB.info
+AutoArrangeIcons.info
+DefIcons.info
+MenuTools.info
+RAWBInfo.info

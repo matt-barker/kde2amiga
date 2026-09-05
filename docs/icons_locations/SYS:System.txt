@@ -1,0 +1,9 @@
+Find.info
+FixFonts.info
+Format.info
+Help.info
+Intellifont.info
+Mounter.info
+NoFastMem.info
+RexxMast.info
+Shell.info

@@ -1,0 +1,12 @@
+Calculator.info
+CMD.info
+Commodities.info
+GraphicDump.info
+HDToolBox.info
+IconEdit.info
+InitPrinter.info
+KeyShow.info
+PrepCard.info
+PrintFiles.info
+ShowConfig.info
+TextEdit.info
