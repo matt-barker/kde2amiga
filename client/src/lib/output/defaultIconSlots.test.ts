@@ -59,12 +59,36 @@ describe('DEFAULT_ICON_SLOTS', () => {
   });
 
   /**
+   * Three DefIcons slots stand in for *volumes* rather than for file types: RAM:, RAD:
+   * and CD0:. Opening a volume means opening its root window, which needs the disk type
+   * byte and the DrawerData that comes with it.
+   *
+   * Typed as a project, the icon has nothing to open and no tool to run, so Workbench
+   * falls back to resolving its name as a path and DOS answers
+   * "Please insert volume RAM Disk in any drive" — observed on the A1200 on 2026-09-05,
+   * against an installed def_RAM.info carrying type 4.
+   */
+  const VOLUME_SLOTS = ['RAM', 'rad', 'cd0'];
+
+  it('gives the slots that stand in for volumes the disk type byte', () => {
+    for (const role of VOLUME_SLOTS) {
+      expect(slotForRole(role as DefaultIconRole).kind).toBe('disk');
+    }
+  });
+
+  /**
    * DefIcons matches by datatype, not by type byte, so the icons standing in for
    * file types are ordinary project icons. A def_picture.info carrying type 2
    * would make Workbench treat every picture as a drawer.
    */
-  it('makes every DefIcons slot a project icon', () => {
-    for (const slot of DEFAULT_ICON_SLOTS.filter((s) => s.group === 'deficons')) {
+  it('makes every DefIcons slot that stands in for a file a project icon', () => {
+    const fileSlots = DEFAULT_ICON_SLOTS.filter(
+      (s) => s.group === 'deficons' && !VOLUME_SLOTS.includes(s.role),
+    );
+    // A disk image is a file: def_adf.info stands in for the .adf on disk, not for a
+    // mounted volume, so it stays a project icon.
+    expect(fileSlots.map((s) => s.role)).toContain('adf');
+    for (const slot of fileSlots) {
       expect(slot.kind).toBe('project');
     }
   });

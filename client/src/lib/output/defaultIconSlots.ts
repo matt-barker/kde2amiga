@@ -46,14 +46,15 @@ export const DEFAULT_ICON_SLOTS = [
   { role: 'project', group: 'type', kind: 'project', description: 'Data files with no better match' },
   { role: 'trashcan', group: 'type', kind: 'trashcan', description: 'The Trashcan drawer' },
 
-  // DefIcons' datatype fallbacks, all ordinary project icons.
+  // DefIcons' datatype fallbacks. Project icons, except the three standing in for
+  // volumes rather than for files — those have to open a window.
   { role: 'adf', group: 'deficons', kind: 'project', description: 'Amiga floppy disk image' },
   { role: 'amigaguide', group: 'deficons', kind: 'project', description: 'AmigaGuide document' },
   { role: 'archive', group: 'deficons', kind: 'project', description: 'LhA / LZX / zip archive' },
   { role: 'ascii', group: 'deficons', kind: 'project', description: 'Plain text' },
   { role: 'asm', group: 'deficons', kind: 'project', description: '68k assembler source' },
   { role: 'c', group: 'deficons', kind: 'project', description: 'C source' },
-  { role: 'cd0', group: 'deficons', kind: 'project', description: 'CD-ROM volume' },
+  { role: 'cd0', group: 'deficons', kind: 'disk', description: 'CD-ROM volume' },
   { role: 'cpp', group: 'deficons', kind: 'project', description: 'C++ source' },
   { role: 'diskarchive', group: 'deficons', kind: 'project', description: 'DMS / disk-image archive' },
   { role: 'font', group: 'deficons', kind: 'project', description: 'Bitmap font' },
@@ -68,8 +69,8 @@ export const DEFAULT_ICON_SLOTS = [
   { role: 'pdf', group: 'deficons', kind: 'project', description: 'PDF document' },
   { role: 'picture', group: 'deficons', kind: 'project', description: 'Picture' },
   { role: 'prefs', group: 'deficons', kind: 'project', description: 'Preferences file' },
-  { role: 'rad', group: 'deficons', kind: 'project', description: 'Recoverable RAM disk' },
-  { role: 'RAM', group: 'deficons', kind: 'project', description: 'RAM disk' },
+  { role: 'rad', group: 'deficons', kind: 'disk', description: 'Recoverable RAM disk' },
+  { role: 'RAM', group: 'deficons', kind: 'disk', description: 'RAM disk' },
   { role: 'rexx', group: 'deficons', kind: 'project', description: 'ARexx script' },
   { role: 'script', group: 'deficons', kind: 'project', description: 'AmigaDOS script' },
   { role: 'sound', group: 'deficons', kind: 'project', description: 'Sound sample' },

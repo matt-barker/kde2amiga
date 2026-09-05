@@ -90,6 +90,28 @@ describe('buildOutputEntries', () => {
     expect(decodeInfoFileForTest(slot!.bytes).type).toBe(4); // project, per the slot
   });
 
+  /**
+   * A volume slot has to come out of the whole pipeline as a disk icon, not merely be
+   * catalogued as one. Shipped as a project, def_RAM.info made the RAM disk unopenable
+   * on the A1200: "Please insert volume RAM Disk in any drive".
+   *
+   * Checked against the real GlowIcons set in ENVARC:Sys on the target machine, where
+   * def_ram, def_rad and def_cd0 all carry type 1 with DrawerData, and def_adf — a disk
+   * *image*, which is a file — carries type 4.
+   */
+  it('writes a volume slot as a disk icon, with the DrawerData that opens its window', () => {
+    for (const role of ['RAM', 'rad', 'cd0'] as const) {
+      const entries = buildOutputEntries([icon({ kind: 'project', role })]);
+      const slot = entries.find((e) => e.path.endsWith(`/Sys/def_${role}.info`))!;
+
+      expect(decodeInfoFileForTest(slot.bytes).type).toBe(1);
+      // do_DrawerData, the DWORD at offset 66: a disk icon promising a window must
+      // actually carry the structure that describes it.
+      const view = new DataView(slot.bytes.buffer, slot.bytes.byteOffset);
+      expect(view.getUint32(66)).not.toBe(0);
+    }
+  });
+
   it('gives a type-fallback slot the type its own name demands', () => {
     const entries = buildOutputEntries([icon({ kind: 'project', role: 'trashcan' })]);
     const slot = entries.find((e) => e.path.endsWith('/Sys/def_trashcan.info'));
