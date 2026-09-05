@@ -213,24 +213,32 @@ export function ThemeLoader(props: { onThemeLoaded: (zip: JSZip, groups: IconGro
           <p className="loader__variants-title">
             <strong>{product.name}</strong> publishes {product.files.length} downloads — pick one:
           </p>
-          <ul className="loader__variant-list">
+          {/*
+            * Labelled by attribute rather than by a visually-hidden <label>: the title
+            * above already names the choice on screen, and the only .visually-hidden rule
+            * lives in another component's stylesheet.
+            */}
+          <select
+            aria-label="Which download"
+            className="loader__variant-select"
+            value={pickedUrl}
+            disabled={busy}
+            onChange={(e) => setPickedUrl(e.target.value)}
+          >
             {product.files.map((file) => (
-              <li key={file.url}>
-                <label className="loader__variant">
-                  <input
-                    type="radio"
-                    name="store-variant"
-                    value={file.url}
-                    checked={pickedUrl === file.url}
-                    disabled={busy}
-                    onChange={() => setPickedUrl(file.url)}
-                  />
-                  <span className="loader__variant-name">{file.name}</span>
-                  <span className="loader__variant-size">{formatSize(file.sizeKb)}</span>
-                </label>
-              </li>
+              // The size goes in the option text rather than beside it: a closed select
+              // shows only the chosen option, so anything outside it is invisible at the
+              // moment the choice is actually being made.
+              <option key={file.url} value={file.url}>
+                {formatSize(file.sizeKb) ? `${file.name} — ${formatSize(file.sizeKb)}` : file.name}
+              </option>
             ))}
-          </ul>
+          </select>
+          {/*
+            * Loading stays behind its own button. Picking is free, but each of these is a
+            * multi-megabyte download, and loading on change would start one for every
+            * option a keyboard user arrows past on the way to the one they want.
+            */}
           <button type="button" disabled={busy || !pickedUrl} onClick={handleLoadSelected}>
             Load selected
           </button>

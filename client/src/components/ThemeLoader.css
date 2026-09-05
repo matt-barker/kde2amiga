@@ -101,43 +101,17 @@
   color: var(--text-h);
 }
 
-.loader__variant-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* Full width because the option text carries the filename and its size together, and
+   theme filenames are long enough that a shrink-to-fit select would truncate them. */
+.loader__variant-select {
   width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.loader__variant {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 4px;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  cursor: pointer;
-}
-
-.loader__variant:hover {
   background: var(--bg);
-}
-
-/* Sizes are secondary to names, and right-aligning them keeps a column of ragged
-   filenames from hiding the one number that distinguishes two similar variants. */
-.loader__variant-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
   color: var(--text-h);
-}
-
-.loader__variant-size {
-  flex: 0 0 auto;
-  font-size: 13px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
+  font: inherit;
 }
 
 /*

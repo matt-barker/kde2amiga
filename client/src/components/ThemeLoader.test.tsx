@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -339,6 +339,34 @@ describe('fetching from a store.kde.org URL', () => {
     spy.mockRestore();
   });
 
+  it('names each download with its size, so two variants can be told apart before a fetch', async () => {
+    // The size is the only thing distinguishing a 4 MB theme from a 40 MB one before
+    // committing to the download, so it belongs in the option text rather than beside it:
+    // a select collapses to the chosen option, and anything outside it is not shown.
+    const { spy } = mockProxy(
+      ocsEnvelope({
+        name: 'Arcanum Icon theme',
+        downloadlink1: 'https://files.example/Blue.tar.xz',
+        downloadname1: 'Arcanum-Blue.tar.xz',
+        downloadsize1: '4200',
+        downloadlink2: 'https://files.example/Green.tar.xz',
+        downloadname2: 'Arcanum-Green.tar.xz',
+        downloadsize2: '512',
+      }),
+      await themeZipBytes(),
+    );
+
+    render(<ThemeLoader onThemeLoaded={vi.fn()} />);
+    pasteStoreUrl('https://store.kde.org/p/2359362');
+
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: /Arcanum-Blue\.tar\.xz.*4\.1 MB/ })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('option', { name: /Arcanum-Green\.tar\.xz.*512 KB/ })).toBeInTheDocument();
+
+    spy.mockRestore();
+  });
+
   it('offers the variants when the product has several files, and loads the chosen one', async () => {
     const { spy, seen } = mockProxy(
       ocsEnvelope({
@@ -358,10 +386,11 @@ describe('fetching from a store.kde.org URL', () => {
     pasteStoreUrl('https://store.kde.org/p/2359362');
 
     // Nothing is unpacked until a variant is picked — Blue and Green are different themes.
-    await waitFor(() => expect(screen.getByRole('radio', { name: /Arcanum-Green/ })).toBeInTheDocument());
+    const picker = await screen.findByLabelText(/which download/i);
+    expect(within(picker).getAllByRole('option')).toHaveLength(2);
     expect(onThemeLoaded).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('radio', { name: /Arcanum-Green/ }));
+    fireEvent.change(picker, { target: { value: 'https://files.example/Green.tar.xz' } });
     fireEvent.click(screen.getByRole('button', { name: /load selected/i }));
 
     await waitFor(() => expect(onThemeLoaded).toHaveBeenCalledTimes(1));
@@ -440,7 +469,7 @@ describe('fetching from a store.kde.org URL', () => {
     render(<ThemeLoader onThemeLoaded={vi.fn()} />);
     pasteStoreUrl('https://store.kde.org/p/2359362');
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: /Arcanum-Blue/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: /Arcanum-Blue/ })).toBeInTheDocument());
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     spy.mockRestore();
