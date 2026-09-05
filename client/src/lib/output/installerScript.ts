@@ -24,21 +24,37 @@ export const SYS_DRAWER = 'Sys';
  */
 export const INSTALLER_SCRIPT_NAME = 'Install kde2amiga Icons';
 
-/**
- * `do_DefaultTool` for the script's icon.
- *
- * Workbench resolves a relative default tool against the drawer the icon sits in before
- * falling back to `C:`, which is what lets the bundled `Installer` beside this script run
- * it on a machine that has no Installer of its own. `SYS:System/Installer` exists on
- * 3.2.3, but it is not in `C:` and not on every machine.
- */
-export const INSTALLER_DEFAULT_TOOL = 'Installer';
-
 /** The bundled Installer 43.3 executable, shipped byte-identical per licence clause B.1. */
 export const INSTALLER_BINARY_NAME = 'Installer';
 
 /** Escom's licence, which clause B.5 requires travel with the binary. */
 export const INSTALLER_LICENSE_NAME = 'Installer.license';
+
+/**
+ * The drawer inside the archive that holds the bundled Installer and its licence.
+ *
+ * The binary used to sit in the archive root beside the script, where the two files a
+ * user saw first were `Install kde2amiga Icons` and `Installer` — and the second reads
+ * like the thing to double-click. It is not: it is a 68k executable that does nothing
+ * useful without a script argument. `C` is where AmigaDOS keeps commands, so a user who
+ * opens the drawer reads what is in it as plumbing rather than as the installer.
+ */
+export const INSTALLER_DRAWER = 'C';
+
+/**
+ * `do_DefaultTool` for the script's icon.
+ *
+ * Workbench resolves a relative default tool against the drawer the icon sits in before
+ * falling back to `C:`, which is what lets the bundled `Installer` run the script on a
+ * machine that has no Installer of its own. `SYS:System/Installer` exists on 3.2.3, but
+ * it is not in `C:` and not on every machine.
+ *
+ * Relative *through a drawer* since the binary stopped sitting in the root, which is the
+ * part hardware has yet to confirm — item 1 of `docs/hardware-pass-workbench-icons.md`
+ * is what checks it. If Workbench turns out to resolve only a bare name here, the binary
+ * has to go back to the root or the icon has to carry an absolute path.
+ */
+export const INSTALLER_DEFAULT_TOOL = `${INSTALLER_DRAWER}/${INSTALLER_BINARY_NAME}`;
 
 /** Where replaced icons are kept, below whichever drawer the user picks. */
 export const BACKUP_DRAWER = 'kde2amiga-backup';
@@ -90,6 +106,10 @@ export function buildInstallerScript(options: InstallerScriptOptions): string {
   ];
 
   lines.push(...choiceBlock(hasDefaults, hasTargets));
+  if (hasTargets) lines.push(...confirmationBlock(drawers));
+  // Asked once, whatever is being installed: both halves overwrite icons the machine
+  // already had, and two askdirs for one install read as two separate questions.
+  lines.push(...backupDirBlock());
   if (hasDefaults) lines.push(...defaultsBlock());
   if (hasTargets) lines.push(...targetsBlock(drawers));
 
@@ -111,7 +131,7 @@ function choiceBlock(hasDefaults: boolean, hasTargets: boolean): string[] {
     '  (prompt "What would you like to install?")',
     '  (help "System default icons fill in for files and drawers that have no icon"',
     '        " of their own. Workbench icons replace the icons in Prefs, Tools and the"',
-    '        " other system drawers. Replaced icons are backed up first.")',
+    '        " other system drawers. Whatever either one replaces is backed up first.")',
     '  (choices "System default icons (ENVARC:Sys)"',
     '           "Workbench icons")',
     '  (default 3)))',
@@ -137,7 +157,6 @@ function messageBlock(indent: string, parts: string[]): string[] {
     return `${head}${part}${i === parts.length - 1 ? ')' : ''}`;
   });
 }
-
 /**
  * The page the user reads before anything is overwritten.
  *
@@ -146,11 +165,11 @@ function messageBlock(indent: string, parts: string[]): string[] {
  * back to back, because a second requester after "Proceed" reads as a second question
  * rather than as the rest of the first answer.
  *
- * Indented for, and emitted inside, the Workbench guard, ahead of the askdir. Told to a
- * user who unticked "Workbench icons" it would claim stock settings were installed over
- * changes that were in fact left alone, which is worse than saying nothing.
+ * Emitted inside its own Workbench guard, ahead of the askdir. Told to a user who
+ * unticked "Workbench icons" it would claim stock settings were installed over changes
+ * that were in fact left alone, which is worse than saying nothing.
  */
-function confirmationPage(drawers: Map<string, WorkbenchTarget[]>): string[] {
+function confirmationBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
   const parts = ['"These Workbench drawers are about to change:\\n\\n"'];
 
   for (const targets of drawers.values()) {
@@ -179,8 +198,83 @@ function confirmationPage(drawers: Map<string, WorkbenchTarget[]>): string[] {
     );
   }
 
-  return [...messageBlock('    ', parts), ''];
+  return ['(if (IN #what 1)', '  (', ...messageBlock('    ', parts), '  )', ')', ''];
 }
+
+/**
+ * Asks for the backup drawer and creates it, once per run.
+ *
+ * Outside both guards because both halves back up: installing the defaults overwrites
+ * whatever `def_*.info` set the machine already had — a GlowIcons or NewIcons install,
+ * most likely — as surely as the Workbench half overwrites `SYS:Prefs/Font.info`.
+ */
+function backupDirBlock(): string[] {
+  return [
+    '(set #backup (askdir',
+    '  (prompt "Where should the icons being replaced be kept?"',
+    // askdir asks for a parent but hands back a drawer inside it, so say so: aimed at an
+    // existing drawer, the originals are not where the user just pointed.
+    `          "\\n\\nA new drawer called ${BACKUP_DRAWER} will be created here.")`,
+    '  (help "Every icon this replaces is copied here first, so you can put the"',
+    '        " originals back.")',
+    `  (default "${BACKUP_DEFAULT_DIR}")))`,
+    `(set #backup (tackon #backup "${BACKUP_DRAWER}"))`,
+    '(makedir #backup)',
+    '',
+  ];
+}
+
+/**
+ * Copies aside everything in `destination` that the archive is about to write over.
+ *
+ * Both halves need the same three steps — mirror the destination's branch below the
+ * backup drawer, walk the archive drawer, and copy across each original that is not
+ * already backed up — so they are written once. The guard in the third step is the whole
+ * safety property, and it is not the sort of thing to have two copies of.
+ *
+ * Indented for, and emitted inside, one of the `#what` guards.
+ */
+function backupBlock(levels: string[], archiveDrawer: string, destination: string): string[] {
+  const lines = ['    (set #here #backup)'];
+
+  // One `makedir` per level rather than one for the whole branch. AmigaDOS `MakeDir`
+  // does not create intermediate drawers and Installer's `makedir` is not documented
+  // to either, and this is the drawer holding the only copy of the icon about to be
+  // overwritten — a failure here aborts the install with the user's original gone.
+  for (const level of levels) {
+    lines.push(`    (set #here (tackon #here "${level}"))`, '    (makedir #here)');
+  }
+
+  lines.push(
+    // The second condition is what makes a re-run safe. `copyfiles` overwrites without
+    // asking, so backing up whenever the destination exists means run 2 finds run 1's
+    // icon at that path and copies it over the stock original — which is then gone from
+    // the machine entirely, with the backup drawer still looking like it worked. A
+    // second theme, a retry after an abort, or adding one more drawer all do it.
+    `    (foreach "${archiveDrawer}" "#?.info"`,
+    `      (if (AND (exists (tackon "${destination}" @each-name))`,
+    '               (NOT (exists (tackon #here @each-name))))',
+    `        (copyfiles (source (tackon "${destination}" @each-name)) (dest #here))))`,
+  );
+
+  return lines;
+}
+
+/**
+ * Where the defaults live on the machine, and so what the backup mirrors.
+ *
+ * `ENVARC:` only. `ENV:` is the RAM copy the startup-sequence rebuilds from `ENVARC:` at
+ * every boot, so an `ENV:Sys/def_drawer.info` is never the only copy of anything and
+ * backing it up would just duplicate the drawer beside it.
+ */
+export const ENVARC_SYS = 'ENVARC:Sys';
+
+/**
+ * The same place as a backup branch, exported so the README can name the restore path.
+ * Written once here rather than spelled out in the README too, so the path a user is
+ * told to copy back from is the path the script actually wrote to.
+ */
+export const ENVARC_BACKUP_BRANCH = ['ENVARC', 'Sys'];
 
 function defaultsBlock(): string[] {
   return [
@@ -188,9 +282,12 @@ function defaultsBlock(): string[] {
     // archive has no Workbench targets to offer.
     '(if (IN #what 0)',
     '  (',
-    '    (makedir "ENVARC:Sys")',
+    `    ; ${ENVARC_SYS} (whatever def_ icons the machine already had)`,
+    ...backupBlock(ENVARC_BACKUP_BRANCH, SYS_DRAWER, ENVARC_SYS),
+    '',
+    `    (makedir "${ENVARC_SYS}")`,
     '    (makedir "ENV:Sys")',
-    `    (copyfiles (source "${SYS_DRAWER}") (dest "ENVARC:Sys") (pattern "#?.info"))`,
+    `    (copyfiles (source "${SYS_DRAWER}") (dest "${ENVARC_SYS}") (pattern "#?.info"))`,
     `    (copyfiles (source "${SYS_DRAWER}") (dest "ENV:Sys") (pattern "#?.info"))`,
     '  )',
     ')',
@@ -199,22 +296,7 @@ function defaultsBlock(): string[] {
 }
 
 function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
-  const lines = [
-    '(if (IN #what 1)',
-    '  (',
-    ...confirmationPage(drawers),
-    '    (set #backup (askdir',
-    '      (prompt "Where should the icons being replaced be kept?"',
-    // askdir asks for a parent but hands back a drawer inside it, so say so: aimed at an
-    // existing drawer, the originals are not where the user just pointed.
-    `            "\\n\\nA new drawer called ${BACKUP_DRAWER} will be created here.")`,
-    '      (help "Every icon this replaces is copied here first, so you can put the"',
-    '            " originals back.")',
-    `      (default "${BACKUP_DEFAULT_DIR}")))`,
-    `    (set #backup (tackon #backup "${BACKUP_DRAWER}"))`,
-    '    (makedir #backup)',
-    '',
-  ];
+  const lines = ['(if (IN #what 1)', '  ('];
 
   // Every target in a group shares a root and a drawer — that pair is what the group was
   // keyed on — so the first one speaks for all of them. Both paths are read off the
@@ -226,27 +308,7 @@ function targetsBlock(drawers: Map<string, WorkbenchTarget[]>): string[] {
 
     lines.push(
       `    ; ${destination} (${targets.length} icon${targets.length === 1 ? '' : 's'})`,
-      '    (set #here #backup)',
-    );
-
-    // One `makedir` per level rather than one for the whole branch. AmigaDOS `MakeDir`
-    // does not create intermediate drawers and Installer's `makedir` is not documented
-    // to either, and this is the drawer holding the only copy of the icon about to be
-    // overwritten — a failure here aborts the install with the user's original gone.
-    for (const level of archiveBranchFor(targets[0])) {
-      lines.push(`    (set #here (tackon #here "${level}"))`, '    (makedir #here)');
-    }
-
-    lines.push(
-      // The second condition is what makes a re-run safe. `copyfiles` overwrites without
-      // asking, so backing up whenever the destination exists means run 2 finds run 1's
-      // icon at that path and copies it over the stock original — which is then gone from
-      // the machine entirely, with the backup drawer still looking like it worked. A
-      // second theme, a retry after an abort, or adding one more drawer all do it.
-      `    (foreach "${archiveDrawer}" "#?.info"`,
-      `      (if (AND (exists (tackon "${destination}" @each-name))`,
-      '               (NOT (exists (tackon #here @each-name))))',
-      `        (copyfiles (source (tackon "${destination}" @each-name)) (dest #here))))`,
+      ...backupBlock(archiveBranchFor(targets[0]), archiveDrawer, destination),
       `    (copyfiles (source "${archiveDrawer}") (dest "${destination}") (pattern "#?.info"))`,
       '',
     );

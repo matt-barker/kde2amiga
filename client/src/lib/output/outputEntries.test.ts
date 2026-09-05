@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { buildOutputEntries, ARCHIVE_BASE_NAME } from './outputEntries';
-import { INSTALLER_SCRIPT_NAME, INSTALLER_DEFAULT_TOOL } from './installerScript';
+import {
+  INSTALLER_DEFAULT_TOOL,
+  INSTALLER_DRAWER,
+  INSTALLER_SCRIPT_NAME,
+} from './installerScript';
 import { decodeInfoFileForTest } from '../newicons/diskObjectDecoderForTest';
 
 import type { NewIconState } from '../newicons/newIconsEncoder';
@@ -179,6 +183,38 @@ describe('buildOutputEntries', () => {
   });
 
   /**
+   * The defaults half backs up too now, and a restore path is worth nothing unwritten:
+   * this README is what someone opens after an install went wrong, on a machine with no
+   * text search and no memory of which drawer they picked in the askdir.
+   */
+  it('names the ENVARC:Sys restore path when defaults are being installed', () => {
+    const readme = readmeFor([icon({ role: 'drawer' })]);
+
+    expect(readme).toContain('SYS:Storage/kde2amiga-backup/ENVARC/Sys/');
+    expect(readme).toContain(
+      'Copy SYS:Storage/kde2amiga-backup/ENVARC/Sys/#?.info TO ENVARC:Sys',
+    );
+  });
+
+  /**
+   * ENVARC: is what the script backs up, so ENVARC: is what the README can promise. A
+   * restore that stops there leaves the RAM copy in ENV: still holding our icons until
+   * the next boot rebuilds it, which looks exactly like a restore that did not work.
+   */
+  it('says a defaults restore needs a reboot, or ENV:Sys copying too', () => {
+    const readme = readmeFor([icon({ role: 'drawer' })]);
+    expect(readme).toMatch(/reboot, or copy the same files into ENV:Sys/);
+  });
+
+  /**
+   * A pack with nothing to install ships no installer and takes no backups, so a
+   * Backups heading would describe a drawer that never appears.
+   */
+  it('leaves the backup section out when nothing will be replaced', () => {
+    expect(readmeFor([icon()])).not.toMatch(/Backups/);
+  });
+
+  /**
    * Nothing in the archive can carry an icon's saved position or a drawer's window
    * geometry across a replacement, so the only honest handling is to say so where the
    * user will read it.
@@ -256,11 +292,24 @@ describe('the installer script', () => {
     );
   });
 
-  it('gives the icon Installer as its default tool, which makes it double-clickable', () => {
-    const icon = buildOutputEntries(withRole).find(
+  /**
+   * The default tool is a path relative to the drawer the icon sits in, so it is only
+   * correct in terms of where the layout actually put the binary. Asserted against the
+   * shipped entry rather than against the constant on both sides, because moving the
+   * binary and forgetting the icon gives Workbench "Installer not found" on hardware and
+   * nothing at all here.
+   */
+  it('points the icon default tool at the Installer the archive actually ships', () => {
+    const entries = buildOutputEntries(withRole, { installer });
+    const scriptIcon = entries.find(
       (entry) => entry.path === `${ARCHIVE_BASE_NAME}/${INSTALLER_SCRIPT_NAME}.info`,
     );
-    expect(decodeInfoFileForTest(icon!.bytes).defaultTool).toBe(INSTALLER_DEFAULT_TOOL);
+    const defaultTool = decodeInfoFileForTest(scriptIcon!.bytes).defaultTool;
+
+    expect(defaultTool).toBe(INSTALLER_DEFAULT_TOOL);
+    expect(entries.map((entry) => entry.path)).toContain(
+      `${ARCHIVE_BASE_NAME}/${defaultTool}`,
+    );
   });
 
   it('writes the script as bytes AmigaDOS can read', () => {
@@ -296,21 +345,54 @@ describe('the installer script', () => {
     expect(textOf(readme!.bytes)).toContain(INSTALLER_SCRIPT_NAME);
   });
 
+  /**
+   * The Shell line has to name the copy that is in the archive. `Installer` on its own
+   * reaches whatever is on the command path, which on a machine with none is nothing —
+   * the very reason the binary travels with the download.
+   */
+  it('gives the Shell command as C/Installer when the binary ships', () => {
+    const readme = buildOutputEntries(withRole, { installer }).find((e) =>
+      e.path.endsWith('README.txt'),
+    );
+    expect(textOf(readme!.bytes)).toContain(
+      `${INSTALLER_DRAWER}/Installer "${INSTALLER_SCRIPT_NAME}"`,
+    );
+  });
+
+  /**
+   * And not when it does not: an archive built without the binary has no C/ drawer, so
+   * pointing a Shell at C/Installer would fail where a bare Installer might still work.
+   */
+  it('falls back to a bare Installer in the README when none is bundled', () => {
+    const readme = buildOutputEntries(withRole).find((e) => e.path.endsWith('README.txt'));
+    const text = textOf(readme!.bytes);
+
+    expect(text).toContain(`Installer "${INSTALLER_SCRIPT_NAME}"`);
+    expect(text).not.toContain(`${INSTALLER_DRAWER}/Installer`);
+  });
+
   it('sits inside the archive drawer like everything else', () => {
     for (const path of pathsOf(withRole)) {
       expect(path.startsWith(`${ARCHIVE_BASE_NAME}/`)).toBe(true);
     }
   });
 
-  it('ships the Installer and its licence beside the script', () => {
+  /**
+   * In `C/`, not the root. Beside the script, the two things a user meets on opening the
+   * drawer are `Install kde2amiga Icons` and `Installer`, and the second reads like the
+   * one to double-click — it is a bare 68k executable that does nothing on its own.
+   */
+  it('ships the Installer and its licence in the C drawer, not the archive root', () => {
     const paths = buildOutputEntries([icon({ role: 'drawer' })], { installer }).map((e) => e.path);
 
     expect(paths).toEqual(
       expect.arrayContaining([
-        `${ARCHIVE_BASE_NAME}/Installer`,
-        `${ARCHIVE_BASE_NAME}/Installer.license`,
+        `${ARCHIVE_BASE_NAME}/${INSTALLER_DRAWER}/Installer`,
+        `${ARCHIVE_BASE_NAME}/${INSTALLER_DRAWER}/Installer.license`,
       ]),
     );
+    expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/Installer`);
+    expect(paths).not.toContain(`${ARCHIVE_BASE_NAME}/Installer.license`);
   });
 
   it('copies the Installer binary through byte for byte', () => {

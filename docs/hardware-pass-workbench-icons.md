@@ -8,11 +8,16 @@ everyone.
 Unpack `kde2amiga-icons.lha` into RAM: and work from there, so a mistake costs a reboot
 rather than a restore.
 
-- [ ] **1. The script icon runs.** Double-click `Install kde2amiga Icons`. Expected: the
-      Installer opens with the window titled "Install kde2amiga Icons". If it reports
-      "Installer not found", Workbench is not resolving a relative default tool against
-      the icon's own drawer, and the icon needs an absolute path or the binary needs to
-      go somewhere on the path.
+- [ ] **1. The script icon runs, with the binary a drawer down.** Double-click
+      `Install kde2amiga Icons`. Expected: the Installer opens with the window titled
+      "Install kde2amiga Icons". The default tool is now `C/Installer` rather than a bare
+      `Installer`, because the binary moved out of the archive root — where it sat beside
+      the script reading like the thing to double-click. That makes this item test two
+      things at once: that Workbench resolves a relative default tool against the icon's
+      own drawer at all, and that it follows one through a subdirectory. If it reports
+      "Installer not found", the second half is what failed, and the fix is either to put
+      the binary back in the root or to give the icon an absolute path — see
+      `INSTALLER_DEFAULT_TOOL` in `client/src/lib/output/installerScript.ts`.
 - [ ] **2. The script is valid 43.3.** `Installer.guide` is not redistributed, so the
       three choices below are the only record of what the script offers: work through
       System default icons only, Workbench icons only, and both together. Expected: no
@@ -32,6 +37,18 @@ rather than a restore.
       Install several `SYS:Prefs` targets at once. Expected: the confirmation page says so
       before anything is overwritten, the drawer opens with the icons unpositioned, and
       Icons/Snapshot makes an arrangement stick.
+- [ ] **3c. The defaults are backed up too, on a machine that already had some.** The
+      defaults half used to overwrite `ENVARC:Sys` with no backup at all, which on this
+      machine means the installed GlowIcons `def_*.info` set is what it destroyed. Install
+      the defaults, then check `SYS:Storage/kde2amiga-backup/ENVARC/Sys` holds the *old*
+      `def_` icons — only the ones the archive carries a replacement for, since the script
+      walks the archive's `Sys/` drawer, not `ENVARC:Sys`. Restore with
+      `Copy SYS:Storage/kde2amiga-backup/ENVARC/Sys/#?.info TO ENVARC:Sys` and reboot.
+      Expected: the GlowIcons defaults are back. Note that `ENV:Sys` is deliberately not
+      backed up — it is rebuilt from `ENVARC:` at boot — so a restore without a reboot
+      leaves the RAM copy still holding ours, which is what the reboot is for. Run it once
+      more against a machine that has *no* `ENVARC:Sys` at all (rename it first) to confirm
+      the empty case installs cleanly rather than aborting on an absent drawer.
 - [ ] **4. WBStartup survives a boot, for more than one icon.** All six WBStartup targets
       carry `DONOTWAIT`; nine targets in all carry it, the other three being
       `SYS:System/Mounter`, `SYS:System/RexxMast` and `SYS:Utilities/Clock`. A regression

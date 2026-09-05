@@ -3,7 +3,10 @@ import type { InstallerFiles } from './installerBinary';
 import {
   BACKUP_DEFAULT_DIR,
   BACKUP_DRAWER,
+  ENVARC_BACKUP_BRANCH,
+  ENVARC_SYS,
   INSTALLER_BINARY_NAME,
+  INSTALLER_DRAWER,
   INSTALLER_LICENSE_NAME,
   INSTALLER_SCRIPT_NAME,
   SYS_DRAWER,
@@ -67,10 +70,18 @@ export interface ArchiveEntry {
  * Written per archive rather than as one constant: an archive with nothing tagged as a
  * default carries no `Sys/` drawer and one with no targets carries no `Wb/` drawer, and
  * a README telling that user to open a drawer that is not there — or to double-click an
- * installer that was not shipped — is worse than no README at all.
+ * installer that was not shipped — is worse than no README at all. `hasInstaller` is the
+ * same argument one level down: the Shell command names `C/Installer` only when that
+ * file is in the archive.
  */
-function readmeText(options: { hasDefaults: boolean; hasTargets: boolean }): string {
-  const { hasDefaults, hasTargets } = options;
+function readmeText(options: {
+  hasDefaults: boolean;
+  hasTargets: boolean;
+  hasInstaller: boolean;
+}): string {
+  const { hasDefaults, hasTargets, hasInstaller } = options;
+  const backupRoot = `${BACKUP_DEFAULT_DIR}/${BACKUP_DRAWER}`;
+  const envarcBackup = `${backupRoot}/${ENVARC_BACKUP_BRANCH.join('/')}`;
 
   let text = `kde2amiga converted icons
 ==========================
@@ -85,10 +96,10 @@ The icons you tagged as system-wide defaults are under ${SYS_DRAWER}/ (for examp
 ${SYS_DRAWER}/def_drawer.info). The installer copies them into BOTH of these
 locations:
 
-  ENVARC:Sys/   (persists across reboots)
+  ${ENVARC_SYS}/   (persists across reboots)
   ENV:Sys/      (the live copy Workbench and Directory Opus 5 read right now)
 
-Copying to ENVARC:Sys/ alone would only take effect after your next reboot.
+Copying to ${ENVARC_SYS}/ alone would only take effect after your next reboot.
 Icons already drawn on screen keep their old look until then either way.
 `;
   }
@@ -97,24 +108,59 @@ Icons already drawn on screen keep their old look until then either way.
     text += `
 The icons you assigned to Workbench locations are under ${WB_DRAWER}/, laid out the
 same way your Amiga is - ${WB_DRAWER}/SYS/Prefs/Font.info replaces SYS:Prefs/Font.info.
+`;
+  }
 
+  if (hasDefaults || hasTargets) {
+    text += `
 Backups
 -------
 
 The installer copies each original into a backup drawer before replacing it. That
 drawer is wherever you point the installer, with ${BACKUP_DRAWER}/ below it and the
-Workbench tree mirrored below that. Answer the installer's question with the
-default and SYS:Prefs/Font.info is kept as:
+tree each icon came from mirrored below that. Take the default the installer
+offers and the originals end up as follows.
+`;
 
-  ${BACKUP_DEFAULT_DIR}/${BACKUP_DRAWER}/SYS/Prefs/Font.info
+    // Both halves overwrite icons the machine already had, so both name a concrete
+    // path and a Copy line. "Copied into a backup drawer" is not a restore procedure,
+    // and this README is read on a machine with no text search after an install went
+    // wrong - the exact path is the whole value of the section.
+    if (hasDefaults) {
+      text += `
+Any def_ icons you already had in ${ENVARC_SYS} are kept under:
+
+  ${envarcBackup}/
+
+To put them back, from a Shell:
+
+  Copy ${envarcBackup}/#?.info TO ${ENVARC_SYS}
+
+Then reboot, or copy the same files into ENV:Sys as well to see it straight away.
+`;
+    }
+
+    if (hasTargets) {
+      text += `
+Each replaced Workbench icon is kept under the same tree, so the original
+SYS:Prefs/Font.info ends up as:
+
+  ${backupRoot}/SYS/Prefs/Font.info
 
 To put a whole drawer's originals back, from a Shell:
 
-  Copy ${BACKUP_DEFAULT_DIR}/${BACKUP_DRAWER}/SYS/Prefs/#?.info TO SYS:Prefs
+  Copy ${backupRoot}/SYS/Prefs/#?.info TO SYS:Prefs
+`;
+    }
 
+    text += `
 Installing a second time will not overwrite a backup that is already there, so the
 originals stay the originals however many themes you try.
+`;
+  }
 
+  if (hasTargets) {
+    text += `
 One thing the backup exists for: a replaced icon loses its position in the drawer,
 and a replaced drawer loses its window size and position, because nothing in this
 archive can read those out of the icon it is replacing. Re-arrange the drawer and
@@ -123,12 +169,29 @@ use Icons/Snapshot once you are happy with it.
   }
 
   if (hasDefaults || hasTargets) {
+    // The Shell line has to name the copy that is actually here. `Installer` alone
+    // reaches whatever is on the command path, which on a machine with none is nothing
+    // at all - the reason the binary travels with the archive in the first place.
+    const shellCommand = hasInstaller
+      ? `${INSTALLER_DRAWER}/${INSTALLER_BINARY_NAME}`
+      : INSTALLER_BINARY_NAME;
+
     text += `
 To install, double-click "${INSTALLER_SCRIPT_NAME}" in this drawer, or run it
 from a Shell in this drawer:
 
-  Installer "${INSTALLER_SCRIPT_NAME}"
+  ${shellCommand} "${INSTALLER_SCRIPT_NAME}"
+`;
 
+    if (hasInstaller) {
+      text += `
+The ${INSTALLER_BINARY_NAME} program itself is in ${INSTALLER_DRAWER}/ with its licence, so you do
+not need one installed already. It is not the thing to double-click - the script
+above is.
+`;
+    }
+
+    text += `
 Installer and Installer project icon
 (c) Copyright 1995-96 Escom AG.  All Rights Reserved.
 Reproduced and distributed under license from Escom AG.
@@ -245,15 +308,28 @@ export function buildOutputEntries(
     entries.push({ path: at(INSTALLER_SCRIPT_NAME), bytes: encodeLatin1(script) });
     entries.push({ path: at(`${INSTALLER_SCRIPT_NAME}.info`), bytes: buildInstallerIcon() });
 
+    /*
+     * Below `C/` rather than beside the script. In the root the two files a user meets
+     * are the script and `Installer`, and the executable is the one that looks like the
+     * thing to run. The script icon's default tool follows it there — the two paths are
+     * built from `INSTALLER_DRAWER` so they cannot part company.
+     */
     if (options.installer) {
-      entries.push({ path: at(INSTALLER_BINARY_NAME), bytes: options.installer.binary });
-      entries.push({ path: at(INSTALLER_LICENSE_NAME), bytes: options.installer.license });
+      const inDrawer = (name: string) => at(`${INSTALLER_DRAWER}/${name}`);
+      entries.push({ path: inDrawer(INSTALLER_BINARY_NAME), bytes: options.installer.binary });
+      entries.push({ path: inDrawer(INSTALLER_LICENSE_NAME), bytes: options.installer.license });
     }
   }
 
   entries.push({
     path: at('README.txt'),
-    bytes: encodeLatin1(readmeText({ hasDefaults, hasTargets: drawers.size > 0 })),
+    bytes: encodeLatin1(
+      readmeText({
+        hasDefaults,
+        hasTargets: drawers.size > 0,
+        hasInstaller: options.installer !== undefined,
+      }),
+    ),
   });
   return entries;
 }

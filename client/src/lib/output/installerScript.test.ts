@@ -71,6 +71,75 @@ describe('buildInstallerScript', () => {
   });
 
   /**
+   * The half that had no backup at all. Installing the defaults writes over whatever
+   * `def_*.info` set the machine already had — a GlowIcons or NewIcons install, most
+   * likely — and until this it did so irreversibly, while the Workbench half beside it
+   * took backups of everything it touched.
+   *
+   * Guarded the same way as that half, for the same reason: `copyfiles` overwrites in
+   * silence, so a second run must not copy the first run's icons over the stock ones and
+   * leave a backup drawer that still looks full.
+   */
+  it('backs up the def_ icons already in ENVARC:Sys before overwriting them', () => {
+    const lines = script([]).split('\n').map((line) => line.trim());
+
+    const at = lines.findIndex((line) => line.startsWith('(foreach "Sys"'));
+    expect(at).toBeGreaterThan(-1);
+    expect(lines[at + 1]).toBe('(if (AND (exists (tackon "ENVARC:Sys" @each-name))');
+    expect(lines[at + 2]).toBe('(NOT (exists (tackon #here @each-name))))');
+    expect(lines[at + 3]).toBe(
+      '(copyfiles (source (tackon "ENVARC:Sys" @each-name)) (dest #here))))',
+    );
+  });
+
+  it('takes that backup before it copies the new defaults in', () => {
+    const text = script([]);
+
+    expect(text.indexOf('(source (tackon "ENVARC:Sys"')).toBeLessThan(
+      text.indexOf('(dest "ENVARC:Sys")'),
+    );
+  });
+
+  /**
+   * Mirrored under ENVARC/, not ENV/. `ENV:` is the RAM copy the startup-sequence
+   * rebuilds from `ENVARC:` at every boot, so an `ENV:Sys` icon is never the only copy
+   * of anything and backing it up would age into a stale duplicate of the drawer beside
+   * it. Restoring `ENVARC:Sys` and rebooting is the honest round trip, and it is what
+   * the README tells the user to do.
+   */
+  it('mirrors the defaults backup under ENVARC/Sys, level by level', () => {
+    const lines = script([]).split('\n').map((line) => line.trim());
+
+    for (const level of ['ENVARC', 'Sys']) {
+      const at = lines.indexOf(`(set #here (tackon #here "${level}"))`);
+      expect(at).toBeGreaterThan(-1);
+      expect(lines[at + 1]).toBe('(makedir #here)');
+    }
+    expect(lines).not.toContain('(set #here (tackon #here "ENV"))');
+  });
+
+  /**
+   * The askdir used to live inside the Workbench guard, because that was the only half
+   * that backed anything up. A defaults-only archive would now reach the backup step
+   * with `#backup` unset and write the user's originals into a drawer named nothing.
+   */
+  it('asks where the backup goes even when only default icons are installed', () => {
+    const text = script([]);
+
+    expect(text).toContain('(askdir');
+    expect(text.indexOf('(askdir')).toBeLessThan(text.indexOf('(if (IN #what 0)'));
+  });
+
+  /**
+   * One requester, not one per half. The user picks a place for "the icons being
+   * replaced", and being asked the same question twice for one install reads as though
+   * the first answer did not take.
+   */
+  it('asks for the backup drawer exactly once when installing both halves', () => {
+    expect(script(['SYS:Prefs/Font']).match(/\(askdir/g)).toHaveLength(1);
+  });
+
+  /**
    * Spec §6: "A confirmation page lists the drawers about to change and names any
    * machineSpecific target among them." Without it the user answers an askdir and then
    * watches twenty icons get overwritten with no statement of what was about to happen.
@@ -190,7 +259,7 @@ describe('buildInstallerScript', () => {
   it('does not offer Workbench icons when no target is assigned', () => {
     const text = script([]);
     expect(text).not.toContain('"Workbench icons"');
-    expect(text).not.toContain('askdir');
+    expect(text).not.toContain('Wb/');
   });
 
   it('warns about a machine-specific target only when one is being installed', () => {

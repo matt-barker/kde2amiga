@@ -10,8 +10,14 @@ describe('buildInstallerIcon', () => {
     expect(decoded().type).toBe(4);
   });
 
-  it('carries Installer as its default tool, so double-clicking runs the script', () => {
-    expect(decoded().defaultTool).toBe('Installer');
+  /**
+   * Spelled out rather than compared against `INSTALLER_DEFAULT_TOOL`, which would pass
+   * whatever that constant said. The path is relative on purpose — it has to resolve
+   * against the drawer the archive was unpacked into, wherever that is — and it has to
+   * name the drawer the layout actually puts the binary in.
+   */
+  it('carries C/Installer as its default tool, so double-clicking runs the script', () => {
+    expect(decoded().defaultTool).toBe('C/Installer');
   });
 
   it('names the application, so the Installer window is not titled "Unnamed"', () => {
