@@ -1,0 +1,8 @@
+{
+  // Emit configuration only. `tsconfig.json` stays the whole project, tests included, so
+  // `npm run typecheck` keeps checking them; this one drops them from the *output*, which
+  // is why the two configs exist rather than one with an `exclude`. Excluding tests there
+  // would silently stop typechecking them.
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*.test.ts"]
+}

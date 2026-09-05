@@ -5,7 +5,6 @@ import './JobConfigForm.css';
 
 /** Prose labels; the values themselves stay the identifiers the pipeline switches on. */
 const EFFECT_LABELS: Record<SelectedStateEffect, string> = {
-  invert: 'Invert',
   brighten: 'Brighten',
   darken: 'Darken',
   tint: 'Tint',

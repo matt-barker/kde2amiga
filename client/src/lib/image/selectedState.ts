@@ -1,6 +1,6 @@
 import { bayerFraction } from './dither';
 
-export type SelectedStateEffect = 'invert' | 'brighten' | 'darken' | 'tint' | 'glowSurround';
+export type SelectedStateEffect = 'brighten' | 'darken' | 'tint' | 'glowSurround';
 
 type Rgb = [number, number, number];
 
@@ -91,8 +91,6 @@ function nearestPaletteIndex(color: Rgb, palette: Rgb[]): number {
 
 function transformColor(effect: SelectedStateEffect, [r, g, b]: Rgb, tintColor?: Rgb): Rgb {
   switch (effect) {
-    case 'invert':
-      return [clamp(255 - r), clamp(255 - g), clamp(255 - b)];
     case 'brighten':
       return [clamp(r + 60), clamp(g + 60), clamp(b + 60)];
     case 'darken':

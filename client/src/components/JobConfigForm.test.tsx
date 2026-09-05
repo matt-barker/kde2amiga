@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { JobConfigForm } from './JobConfigForm';
 import type { JobConfig } from '../lib/pipeline/convertJob';
 
-const baseConfig: JobConfig = { outputSizePx: 32, maxColors: 16, selectedEffect: 'invert' };
+const baseConfig: JobConfig = { outputSizePx: 32, maxColors: 16, selectedEffect: 'brighten' };
 
 describe('JobConfigForm', () => {
   it('renders the current output size and max colours as the chosen presets', () => {
@@ -23,7 +23,7 @@ describe('JobConfigForm', () => {
     render(<JobConfigForm config={baseConfig} onChange={vi.fn()} />);
     const options = screen.getByLabelText(/selected-state effect/i).querySelectorAll('option');
     expect(Array.from(options, (o) => o.textContent)).toEqual([
-      'Invert', 'Brighten', 'Darken', 'Tint', 'Glow Surround',
+      'Brighten', 'Darken', 'Tint', 'Glow Surround',
     ]);
   });
 });

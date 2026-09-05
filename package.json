@@ -6,7 +6,7 @@
     "test": "npm --prefix client test && npm --prefix server test",
     "build": "npm --prefix client run build && npm --prefix server run build",
     "start": "npm run build && npm --prefix server run start",
-    "verify": "npm --prefix client run build && npm --prefix client run lint && npm test && npm --prefix server run typecheck"
+    "verify": "npm run build && npm --prefix client run lint && npm test && npm --prefix server run typecheck"
   },
   "devDependencies": {}
 }

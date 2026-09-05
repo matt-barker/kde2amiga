@@ -9,16 +9,6 @@ const palette: [number, number, number][] = [
 ];
 
 describe('applySelectedStateEffect', () => {
-  it('invert maps each color to its nearest match after RGB inversion, never onto index 0', () => {
-    // pixel using palette[1] = white (255,255,255) inverted -> black (0,0,0). Nearest by
-    // raw distance is palette[0] (0,0,0), but index 0 is the reserved transparent slot and
-    // must never be reachable from a non-zero input index, so the nearest non-zero entry
-    // wins instead: palette[2] = (100,100,100), distance 100^2*3=30000 vs palette[1]'s
-    // 255^2*3=195075.
-    const result = applySelectedStateEffect('invert', palette, [1], 1, 1);
-    expect(result).toEqual([2]);
-  });
-
   it('brighten pushes colors toward white and re-snaps to the palette', () => {
     // mid-grey (100,100,100) brightened by 60 -> (160,160,160), which is nearer
     // to (200,200,200) (distance 40^2*3=4800) than to (100,100,100) itself (60^2*3=10800)
@@ -33,7 +23,7 @@ describe('applySelectedStateEffect', () => {
   });
 
   it('leaves index 0 unchanged under every effect', () => {
-    for (const effect of ['invert', 'brighten', 'darken', 'tint', 'glowSurround'] as const) {
+    for (const effect of ['brighten', 'darken', 'tint', 'glowSurround'] as const) {
       const result = applySelectedStateEffect(effect, palette, [0], 1, 1, [255, 255, 0]);
       expect(result).toEqual([0]);
     }
@@ -62,7 +52,7 @@ describe('applySelectedStateEffect', () => {
       [245, 245, 245],
       [128, 128, 128],
     ];
-    for (const effect of ['invert', 'brighten', 'darken', 'tint', 'glowSurround'] as const) {
+    for (const effect of ['brighten', 'darken', 'tint', 'glowSurround'] as const) {
       for (let index = 1; index < richPalette.length; index++) {
         const result = applySelectedStateEffect(effect, richPalette, [index], 1, 1, [0, 0, 0]);
         expect(result[0]).not.toBe(0);
