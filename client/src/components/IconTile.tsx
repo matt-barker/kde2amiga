@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react';
 import type JSZip from 'jszip';
 import type { IconVariant } from '../lib/theme/themeParser';
+import { WORKBENCH_GREY } from '../lib/image/rgb';
 
-/** Sampled from a real Workbench screenshot: colour 0 of the standard palette. */
-/**
- * The standard AmigaOS Workbench grey, sampled from a 3.2.3 screenshot.
- *
- * Must stay equal to `JobConfig.backgroundColor`'s default: conversion bakes soft edges
- * against that colour, so a preview grounded on any other grey shows a fringe the Amiga
- * will not.
- */
-export const WORKBENCH_GREY = '#ABABAB';
 
 const MIME: Record<IconVariant['format'], string> = {
   svg: 'image/svg+xml',

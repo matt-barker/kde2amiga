@@ -50,11 +50,12 @@
   /*
    * One continuous ground behind both canvases rather than a tile behind each.
    *
-   * Conversion bakes soft edges against the Workbench grey, so previews only read
-   * correctly on it — but giving each canvas its own grey rectangle draws a boundary
-   * around every icon that the Workbench does not have, which made a faithful preview
-   * look worse than the hardware it was predicting. The colour itself is set inline
-   * from WORKBENCH_GREY, since it has to track what conversion bakes against.
+   * Conversion bakes soft edges against whichever colour the picker holds, so previews
+   * only read correctly on that one — but giving each canvas its own rectangle draws a
+   * boundary around every icon that the Workbench does not have, which made a faithful
+   * preview look worse than the hardware it was predicting. The colour itself is set
+   * inline from JobConfig's backgroundColor, since it has to track what conversion bakes
+   * against; it falls back to WORKBENCH_GREY when nothing is being baked in.
    */
   width: fit-content;
   padding: 4px 6px;

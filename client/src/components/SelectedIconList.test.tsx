@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // other component test in this codebase drives selects the same way.
 import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
 import { SelectedIconList } from './SelectedIconList';
-import { WORKBENCH_GREY } from './IconTile';
+import { WORKBENCH_GREY } from '../lib/image/rgb';
 import type { IconAssignment } from '../lib/theme/assignment';
 import type { IconVariant } from '../lib/theme/themeParser';
 import type { IconPreview } from '../lib/pipeline/preview';
@@ -202,6 +202,33 @@ describe('SelectedIconList', () => {
     // JobConfig's backgroundColor default is [0xab, 0xab, 0xab]; a preview drawn on a
     // different grey shows a fringe the Amiga will not.
     expect(WORKBENCH_GREY.toLowerCase()).toBe('#ababab');
+  });
+
+  it('grounds previews on the colour edges are actually being baked against', () => {
+    // The ground is not decoration: it is the colour `flattenOntoBackground` composites
+    // soft edges onto, so a preview shown on any other colour is showing a fringe that
+    // will not be there on the backdrop the user picked. Judging the choice means seeing
+    // it, which is the whole reason the picker exists.
+    const preview: IconPreview = {
+      zipPath: folder.zipPath,
+      width: 2,
+      height: 2,
+      normal: new ImageData(new Uint8ClampedArray(2 * 2 * 4), 2, 2),
+      selected: new ImageData(new Uint8ClampedArray(2 * 2 * 4), 2, 2),
+    };
+
+    render(
+      <SelectedIconList
+        variants={[folder]}
+        assignments={new Map<string, IconAssignment>([[folder.zipPath, { kind: 'drawer' }]])}
+        onAssignmentChange={() => {}} onRemove={() => {}}
+        previews={new Map([[folder.zipPath, preview]])}
+        backgroundColor={[0x33, 0x55, 0xaa]}
+      />,
+    );
+
+    expect(screen.getByLabelText(/normal state for folder/i).parentElement)
+      .toHaveStyle({ backgroundColor: '#3355aa' });
   });
 });
 

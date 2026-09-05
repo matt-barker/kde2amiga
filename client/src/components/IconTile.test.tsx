@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import JSZip from 'jszip';
-import { IconTile, WORKBENCH_GREY } from './IconTile';
+import { IconTile } from './IconTile';
+import { WORKBENCH_GREY } from '../lib/image/rgb';
 import type { IconVariant } from '../lib/theme/themeParser';
 
 const variant: IconVariant = {

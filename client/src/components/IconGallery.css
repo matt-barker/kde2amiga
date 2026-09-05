@@ -95,7 +95,9 @@
   height: 56px;
   border-radius: 4px;
   /* background-color is set inline: it is WORKBENCH_GREY, a value the conversion
-     pipeline also depends on, so it lives in the component next to that constant. */
+     pipeline also depends on, so it comes from lib/image/rgb rather than from here.
+     Gallery tiles show source KDE artwork, not converted output, so this one stays
+     the fixed grey while the preview ground follows the background picker. */
 }
 
 .icon-tile__swatch [role='status'] {

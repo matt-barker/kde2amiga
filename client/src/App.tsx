@@ -335,6 +335,7 @@ export default function App() {
             }
             onRemove={handleRemove}
             previews={visiblePreviews}
+            backgroundColor={config.backgroundColor}
           />
           <JobConfigForm
             config={config}

@@ -9,7 +9,7 @@ import {
 } from '../lib/output/workbenchTargets';
 import { defaultAssignment, type IconAssignment } from '../lib/theme/assignment';
 import type { IconPreview } from '../lib/pipeline/preview';
-import { WORKBENCH_GREY } from './IconTile';
+import { WORKBENCH_GREY, toHex, type Rgb } from '../lib/image/rgb';
 import './SelectedIconList.css';
 
 const KINDS: IconKind[] = ['drawer', 'project', 'tool', 'disk', 'trashcan'];
@@ -65,8 +65,14 @@ export function SelectedIconList(props: {
   onAssignmentChange: (zipPath: string, assignment: IconAssignment) => void;
   onRemove: (zipPath: string) => void;
   previews?: Map<string, IconPreview>;
+  /** The colour conversion is baking soft edges against, or undefined when it is not. */
+  backgroundColor?: Rgb;
 }) {
-  const { variants, assignments, onAssignmentChange, onRemove, previews } = props;
+  const { variants, assignments, onAssignmentChange, onRemove, previews, backgroundColor } = props;
+
+  // Workbench grey when nothing is being baked in: the previews still have to sit on
+  // something, and the desktop they are headed for is that grey.
+  const ground = backgroundColor ? toHex(backgroundColor) : WORKBENCH_GREY;
 
   if (variants.length === 0) return null;
 
@@ -101,11 +107,11 @@ export function SelectedIconList(props: {
               <tr key={variant.zipPath}>
                 <td className="selected__previews">
                   {/*
-                    * The grey is set here rather than in the stylesheet because it is a
-                    * conversion value, not a styling choice: soft edges are baked against
-                    * it, so it has to track JobConfig's backgroundColor default.
+                    * Set here rather than in the stylesheet because it is a conversion
+                    * value, not a styling choice: soft edges are baked against this exact
+                    * colour, so the preview is only honest when shown on it.
                     */}
-                  <div style={preview ? { backgroundColor: WORKBENCH_GREY } : undefined}>
+                  <div style={preview ? { backgroundColor: ground } : undefined}>
                     {preview ? (
                       <>
                         <PreviewCanvas image={preview.normal} label={`Normal state for ${variant.name}`} />

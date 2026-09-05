@@ -463,6 +463,27 @@ describe('preview invalidation', () => {
 
     await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
   });
+
+  it('shows the picked background colour behind the previews it rebuilds', async () => {
+    /*
+     * The picker and the ground behind the previews are two halves of one thing, and
+     * nothing in either component's own tests can prove they are connected — exactly the
+     * rot `previewSignature`'s comment records for this same field, one layer down.
+     */
+    render(<App />);
+
+    const file = await makeThemeZipFile();
+    fireEvent.change(screen.getByLabelText(/upload/i), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('folder')).toBeInTheDocument());
+
+    fireEvent.click(galleryCheckboxFor('folder'));
+    await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+
+    fireEvent.change(screen.getByLabelText(/background colour/i), { target: { value: '#3355aa' } });
+    const rebuilt = await screen.findByLabelText(/normal state for folder/i, {}, { timeout: 2000 });
+
+    expect(rebuilt.parentElement).toHaveStyle({ backgroundColor: '#3355aa' });
+  });
 });
 
 describe('default configuration', () => {

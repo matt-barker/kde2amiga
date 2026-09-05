@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { JobConfig } from '../lib/pipeline/convertJob';
 import { GLOWICONS_RAMP, type SelectedStateEffect } from '../lib/image/selectedState';
+import { WORKBENCH_GREY_RGB, toHex, fromHex } from '../lib/image/rgb';
 import './JobConfigForm.css';
 
 /** Prose labels; the values themselves stay the identifiers the pipeline switches on. */
@@ -40,7 +41,6 @@ const MAX_OUTPUT_SIZE_PX = 222;
  * GlowIcons themselves are drawn against — their opaque grey drop shadows only resolve
  * on this colour, which is why switching this off has to be possible at all.
  */
-const WORKBENCH_GREY: [number, number, number] = [0xab, 0xab, 0xab];
 
 /**
  * The middle stop of GlowIcons' own ramp, and what the picker shows until one is chosen.
@@ -52,15 +52,6 @@ const WORKBENCH_GREY: [number, number, number] = [0xab, 0xab, 0xab];
 const GLOWICONS_YELLOW = GLOWICONS_RAMP[1];
 
 const CUSTOM = 'custom';
-
-const toHex = ([r, g, b]: [number, number, number]) =>
-  `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
-
-const fromHex = (hex: string): [number, number, number] => [
-  parseInt(hex.slice(1, 3), 16),
-  parseInt(hex.slice(3, 5), 16),
-  parseInt(hex.slice(5, 7), 16),
-];
 
 /**
  * A dropdown of known-good values, with a number field behind a Custom entry.
@@ -168,7 +159,7 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
               ...config,
               // Off means no colour at all, not black: baking any colour in assumes a
               // backdrop, and on a patterned or non-grey one the result is a fringe.
-              backgroundColor: e.target.checked ? WORKBENCH_GREY : undefined,
+              backgroundColor: e.target.checked ? WORKBENCH_GREY_RGB : undefined,
             })
           }
         />
@@ -180,7 +171,7 @@ export function JobConfigForm(props: { config: JobConfig; onChange: (config: Job
           id="background-colour"
           type="color"
           disabled={config.backgroundColor === undefined}
-          value={toHex(config.backgroundColor ?? WORKBENCH_GREY)}
+          value={toHex(config.backgroundColor ?? WORKBENCH_GREY_RGB)}
           onChange={(e) => onChange({ ...config, backgroundColor: fromHex(e.target.value) })}
         />
       </div>
